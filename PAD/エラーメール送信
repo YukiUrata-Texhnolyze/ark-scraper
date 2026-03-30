@@ -1,0 +1,29 @@
+@@'emailMessage/Sensitivity': ''
+@@connectionDisplayName: 'Crc07c9_shared_office365_e96630b5'
+External.InvokeCloudConnector Connection: '87bbd656-f73e-4825-a04b-c18050638fc4' ConnectorId: '/providers/Microsoft.PowerApps/apis/shared_office365' OperationId: 'SendEmailV2' @'emailMessage/To': $'''urata@ark-pc.co.jp''' @'emailMessage/Subject': $'''クロールエラー''' @'emailMessage/Body': $'''クロール中に予期せぬエラーが発生しました。
+※本間さん用クローラー
+
+システム管理者に修正を依頼してください。''' @'emailMessage/From': $'''urata@texhnolyze.biz''' @'emailMessage/Cc': $'''k_ishii@ark-pc.co.jp'''
+
+# [ControlRepository][PowerAutomateDesktop]
+
+{
+  "ControlRepositorySymbols": [],
+  "ImageRepositorySymbol": {
+    "Repository": "{\r\n  \"Folders\": [],\r\n  \"Images\": [],\r\n  \"Version\": 1\r\n}",
+    "ImportMetadata": {},
+    "Name": "imgrepo"
+  },
+  "ConnectionReferences": [
+    {
+      "ConnectorId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+      "DisplayName": "Crc07c9_shared_office365_e96630b5",
+      "InternalId": "87bbd656-f73e-4825-a04b-c18050638fc4",
+      "IsDisabled": false,
+      "LogicalName": "Crc07c9_shared_office365_e96630b59a16416793361aa6a16531ef",
+      "IsEmbedded": false,
+      "ConnectionName": "b8ab19af82e94797895401236a6fa177",
+      "ConnectionDisplayName": "urata@texhnolyze.biz"
+    }
+  ]
+}

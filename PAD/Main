@@ -1,0 +1,10 @@
+BLOCK えらーメール送信
+ON BLOCK ERROR
+    CALL エラーメール送信
+    THROW ERROR
+END
+    CALL tek
+    CALL pside
+    CALL Amazon
+    CALL WD_copy
+END
