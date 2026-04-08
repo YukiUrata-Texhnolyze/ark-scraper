@@ -1,6 +1,8 @@
 node_modules/
 dist/
 output/
+.playwright/
+playwright-artifacts/
 .env
 *.xlsx
 *.log

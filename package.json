@@ -7,10 +7,14 @@
     "build": "tsc",
     "start": "node dist/main.js",
     "dev": "ts-node src/main.ts",
+    "ark:memory": "ts-node src/main.ts ark-memory",
+    "ark:ssd": "ts-node src/main.ts ark-ssd",
+    "ark:all": "ts-node src/main.ts ark-memory ark-ssd",
     "amazon:profile": "ts-node src/tools/amazonProfileSetup.ts",
     "postinstall": "playwright install chromium"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1026.0",
     "dotenv": "^16.4.5",
     "nodemailer": "^6.9.14",
     "playwright": "^1.44.0"

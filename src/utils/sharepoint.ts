@@ -24,6 +24,11 @@ interface SharePointDriveInfo {
   webUrl: string;
 }
 
+interface GraphCollectionResponse<T> {
+  value?: T[];
+  '@odata.nextLink'?: string;
+}
+
 export async function uploadFilesToSharePointIfConfigured(filePaths: string[]): Promise<void> {
   const config = getSharePointConfig();
   if (!config) {
@@ -161,17 +166,7 @@ async function deleteOldFilesInSharePointFolder(
   siteId: string,
   driveRelativeFolderPath: string,
 ): Promise<void> {
-  const listUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeSharePointPath(driveRelativeFolderPath)}:/children?$select=id,name,webUrl,lastModifiedDateTime,file,folder`;
-  const response = await fetch(listUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  if (!response.ok) {
-    throw new Error(`[SharePoint] 既存ファイル一覧取得失敗: ${response.status} ${await response.text()}`);
-  }
-
-  const json = await response.json() as { value?: SharePointDriveItem[] };
-  const items = json.value ?? [];
+  const items = await listSharePointFolderChildren(accessToken, siteId, driveRelativeFolderPath);
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - 1);
 
@@ -203,6 +198,31 @@ async function deleteOldFilesInSharePointFolder(
 
     console.log(`[SharePoint] 古いファイル削除: ${item.name ?? item.id}`);
   }
+}
+
+async function listSharePointFolderChildren(
+  accessToken: string,
+  siteId: string,
+  driveRelativeFolderPath: string,
+): Promise<SharePointDriveItem[]> {
+  const items: SharePointDriveItem[] = [];
+  let nextUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeSharePointPath(driveRelativeFolderPath)}:/children?$select=id,name,webUrl,lastModifiedDateTime,file,folder&$top=999`;
+
+  while (nextUrl) {
+    const response = await fetch(nextUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      throw new Error(`[SharePoint] 既存ファイル一覧取得失敗: ${response.status} ${await response.text()}`);
+    }
+
+    const json = await response.json() as GraphCollectionResponse<SharePointDriveItem>;
+    items.push(...(json.value ?? []));
+    nextUrl = json['@odata.nextLink'] ?? '';
+  }
+
+  return items;
 }
 
 async function getSharePointDriveInfo(siteId: string, accessToken: string): Promise<SharePointDriveInfo> {
