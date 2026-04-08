@@ -104,6 +104,7 @@ crontab -l | sed '/# BEGIN ark-scraper-scheduler/,/# END ark-scraper-scheduler/d
 - `src/` や `package.json` に変更があれば、実行前に自動で `npm run build` します
 - `scripts/run-scheduled-scrape.sh` は target 引数をそのまま `dist/main.js` へ渡します
 - lock file は target ごとに分かれるので、`standard` と `ark` を別 cron にしても相互に skip しません
+- 通常ジョブは `tek / pside / amazon / wd` のみを回し、Ark は別ジョブに分ける運用を想定しています
 - `cron` は固定時刻ベースです。前回完了からの相対間隔で回したい場合は `systemd timer` のほうが向いています
 
 ## Amazon 運用メモ
@@ -162,6 +163,7 @@ Ark メモリ / SSD はこの repo に統合しましたが、既存 SharePoint 
 
 - `ark-memory` / `ark-ssd` は SharePoint へ送らず、R2 設定があれば CSV を R2 へアップロードします
 - ローカル CSV は `./output`、証跡 JSON / HTML / PNG は `./playwright-artifacts` 配下へ保存します
+- Ark-only 実行では、R2 アップロード成功後に `./output` の中身を掃除します
 - 初回は Cloudflare 確認のため `HEADLESS=false` 実行が必要なことがあります
 - storage state は既定で `./playwright-artifacts/ark-storage.json` に保存 / 再利用します
 

@@ -76,6 +76,7 @@ async function main(): Promise<void> {
   let browser: Browser | null = null;
   const sharePointFiles: string[] = [];
   const r2Files: R2UploadFile[] = [];
+  const ranOnlyArkTargets = targets.length > 0 && targets.every(isArkTarget);
 
   const getBrowser = async (): Promise<Browser> => {
     if (!browser) {
@@ -152,7 +153,10 @@ async function main(): Promise<void> {
       await removeUploadedFiles(sharePointFiles);
     }
 
-    await uploadFilesToR2IfConfigured(r2Files);
+    const r2UploadCompleted = await uploadFilesToR2IfConfigured(r2Files);
+    if (ranOnlyArkTargets && r2UploadCompleted) {
+      await clearOutputDirectoryContents(OUTPUT_DIR);
+    }
 
     console.log('\n==== 全スクレイパー完了 ====');
     console.log(`出力先: ${OUTPUT_DIR}`);
@@ -195,6 +199,25 @@ async function removeUploadedFiles(filePaths: string[]): Promise<void> {
   }));
 
   console.log(`[Output] SharePointアップロード済みファイルを削除: ${existingFiles.length}件`);
+}
+
+async function clearOutputDirectoryContents(outputDir: string): Promise<void> {
+  const resolvedOutputDir = path.resolve(outputDir);
+  if (!fs.existsSync(resolvedOutputDir)) {
+    return;
+  }
+
+  const entries = await fs.promises.readdir(resolvedOutputDir, { withFileTypes: true });
+  if (entries.length === 0) {
+    return;
+  }
+
+  await Promise.all(entries.map(async (entry) => {
+    const entryPath = path.join(resolvedOutputDir, entry.name);
+    await fs.promises.rm(entryPath, { recursive: true, force: true });
+  }));
+
+  console.log(`[Output] Arkアップロード完了後に出力ディレクトリを掃除: ${resolvedOutputDir}`);
 }
 
 function formatOutputTimestamp(date: Date): string {
