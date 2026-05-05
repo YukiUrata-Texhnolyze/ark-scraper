@@ -38,8 +38,18 @@ type ScrapeTarget = 'tek' | 'pside' | 'amazon' | 'wd' | 'ark-memory' | 'ark-ssd'
 // =====================================================
 
 const OUTPUT_DIR = process.env.OUTPUT_DIR ?? './output';
+const RESOLVED_OUTPUT_DIR = path.resolve(OUTPUT_DIR);
 const RUN_TIMESTAMP = formatOutputTimestamp(new Date());
 const OUTPUT_FILE_NAME = `${RUN_TIMESTAMP}.csv`;
+const TARGET_MAX_ATTEMPTS = Math.max(1, resolveNumberEnv('SCRAPER_TARGET_MAX_ATTEMPTS', 2));
+const TARGET_RETRY_DELAY_MS = Math.max(1000, resolveNumberEnv('SCRAPER_TARGET_RETRY_DELAY_MS', 5000));
+const SHAREPOINT_STAGING_DIR = path.join(RESOLVED_OUTPUT_DIR, '.sharepoint-staging', RUN_TIMESTAMP);
+
+interface SharePointStagedFile {
+  sourcePath: string;
+  stagedPath: string;
+  target: Extract<ScrapeTarget, 'tek' | 'pside' | 'amazon' | 'wd'>;
+}
 
 const TEK_CONFIG: RakutenConfig = {
   shopId: '412157',
@@ -73,59 +83,51 @@ const WD_CONFIG: WDConfig = {
 async function main(): Promise<void> {
   const targets = getTargets();
   const headless = process.env.HEADLESS !== 'false';
-  let browser: Browser | null = null;
-  const sharePointFiles: string[] = [];
+  const sharePointFiles: SharePointStagedFile[] = [];
   const r2Files: R2UploadFile[] = [];
   const ranOnlyArkTargets = targets.length > 0 && targets.every(isArkTarget);
-
-  const getBrowser = async (): Promise<Browser> => {
-    if (!browser) {
-      browser = await chromium.launch({
-        headless,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
-    }
-
-    return browser;
-  };
 
   try {
     for (const target of targets) {
       if (target === 'tek') {
-        await runWithTargetContext(target, headless, getBrowser, async (context) => {
+        const outputFilePath = getOutputFilePath(TEK_CONFIG.prefix, OUTPUT_FILE_NAME);
+        await runTargetWithRetries(target, headless, outputFilePath, async (context) => {
           await scrapeRakuten(context, { ...TEK_CONFIG, csvFileName: OUTPUT_FILE_NAME });
         });
-        sharePointFiles.push(getOutputFilePath(TEK_CONFIG.prefix, OUTPUT_FILE_NAME));
+        sharePointFiles.push(await stageSharePointFile(target, outputFilePath));
         continue;
       }
 
       if (target === 'pside') {
-        await runWithTargetContext(target, headless, getBrowser, async (context) => {
+        const outputFilePath = getOutputFilePath(PSIDE_CONFIG.prefix, OUTPUT_FILE_NAME);
+        await runTargetWithRetries(target, headless, outputFilePath, async (context) => {
           await scrapeRakuten(context, { ...PSIDE_CONFIG, csvFileName: OUTPUT_FILE_NAME });
         });
-        sharePointFiles.push(getOutputFilePath(PSIDE_CONFIG.prefix, OUTPUT_FILE_NAME));
+        sharePointFiles.push(await stageSharePointFile(target, outputFilePath));
         continue;
       }
 
       if (target === 'amazon') {
-        await runWithTargetContext(target, headless, getBrowser, async (context) => {
+        const outputFilePath = getOutputFilePath(AMAZON_CONFIG.prefix, OUTPUT_FILE_NAME);
+        await runTargetWithRetries(target, headless, outputFilePath, async (context) => {
           await scrapeAmazon(context, AMAZON_CONFIG);
         });
-        sharePointFiles.push(getOutputFilePath(AMAZON_CONFIG.prefix, OUTPUT_FILE_NAME));
+        sharePointFiles.push(await stageSharePointFile(target, outputFilePath));
         continue;
       }
 
       if (target === 'wd') {
-        await runWithTargetContext(target, headless, getBrowser, async (context) => {
+        const outputFilePath = getOutputFilePath(WD_CONFIG.prefix, OUTPUT_FILE_NAME);
+        await runTargetWithRetries(target, headless, outputFilePath, async (context) => {
           await scrapeWD(context, WD_CONFIG);
         });
-        sharePointFiles.push(getOutputFilePath(WD_CONFIG.prefix, OUTPUT_FILE_NAME));
+        sharePointFiles.push(await stageSharePointFile(target, outputFilePath));
         continue;
       }
 
       if (target === 'ark-memory') {
         const config = createArkMemoryConfig(headless);
-        await runWithTargetContext(target, headless, getBrowser, async (context) => {
+        await runTargetOnce(target, headless, async (context) => {
           await scrapeArkMemory(context, config);
         });
         r2Files.push({
@@ -137,7 +139,7 @@ async function main(): Promise<void> {
 
       if (target === 'ark-ssd') {
         const config = createArkSsdConfig(headless);
-        await runWithTargetContext(target, headless, getBrowser, async (context) => {
+        await runTargetOnce(target, headless, async (context) => {
           await scrapeArkSsd(context, config);
         });
         r2Files.push({
@@ -148,14 +150,20 @@ async function main(): Promise<void> {
     }
 
     const sharePointConfigured = isSharePointUploadConfigured();
-    await uploadFilesToSharePointIfConfigured(sharePointFiles);
+    const uploadedSharePointFiles = await uploadFilesToSharePointIfConfigured(
+      sharePointFiles.map((file) => file.stagedPath),
+    );
     if (sharePointConfigured) {
-      await removeUploadedFiles(sharePointFiles);
+      await removeUploadedFiles(
+        sharePointFiles
+          .filter((file) => uploadedSharePointFiles.includes(file.stagedPath))
+          .flatMap((file) => [file.stagedPath, file.sourcePath]),
+      );
     }
 
     const r2UploadCompleted = await uploadFilesToR2IfConfigured(r2Files);
     if (ranOnlyArkTargets && r2UploadCompleted) {
-      await clearOutputDirectoryContents(OUTPUT_DIR);
+        await removeArkUploadedFiles(r2Files.map((file) => file.filePath));
     }
 
     console.log('\n==== 全スクレイパー完了 ====');
@@ -173,10 +181,6 @@ async function main(): Promise<void> {
     }
 
     process.exit(1);
-  } finally {
-    if (browser) {
-      await (browser as Browser).close();
-    }
   }
 }
 
@@ -185,6 +189,14 @@ function getOutputFilePath(prefix: string, fileName: string): string {
 }
 
 async function removeUploadedFiles(filePaths: string[]): Promise<void> {
+  await removeOutputFiles(filePaths, '[Output] SharePointアップロード済みファイルを削除');
+}
+
+async function removeArkUploadedFiles(filePaths: string[]): Promise<void> {
+  await removeOutputFiles(filePaths, '[Output] Arkアップロード済みCSVを削除');
+}
+
+async function removeOutputFiles(filePaths: string[], logMessage: string): Promise<void> {
   const existingFiles = filePaths
     .map((filePath) => path.resolve(filePath))
     .filter((filePath, index, array) => array.indexOf(filePath) === index)
@@ -198,26 +210,128 @@ async function removeUploadedFiles(filePaths: string[]): Promise<void> {
     await fs.promises.rm(filePath, { force: true });
   }));
 
-  console.log(`[Output] SharePointアップロード済みファイルを削除: ${existingFiles.length}件`);
+  console.log(`${logMessage}: ${existingFiles.length}件`);
 }
 
-async function clearOutputDirectoryContents(outputDir: string): Promise<void> {
-  const resolvedOutputDir = path.resolve(outputDir);
-  if (!fs.existsSync(resolvedOutputDir)) {
-    return;
+async function runTargetOnce<T>(
+  target: ScrapeTarget,
+  headless: boolean,
+  handler: (context: BrowserContext) => Promise<T>,
+): Promise<T> {
+  let browser: Browser | null = null;
+
+  const getBrowser = async (): Promise<Browser> => {
+    if (!browser) {
+      browser = await chromium.launch({
+        headless,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      });
+    }
+
+    return browser;
+  };
+
+  try {
+    return await runWithTargetContext(target, headless, getBrowser, handler);
+  } finally {
+    const currentBrowser = browser as Browser | null;
+    if (currentBrowser !== null) {
+      await currentBrowser.close().catch(() => undefined);
+    }
+  }
+}
+
+async function runTargetWithRetries<T>(
+  target: Extract<ScrapeTarget, 'tek' | 'pside' | 'amazon' | 'wd'>,
+  headless: boolean,
+  outputFilePath: string,
+  handler: (context: BrowserContext) => Promise<T>,
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= TARGET_MAX_ATTEMPTS; attempt++) {
+    await removeFileIfExists(outputFilePath);
+
+    try {
+      const result = await runTargetOnce(target, headless, handler);
+      await assertOutputFileReady(target, outputFilePath);
+      return result;
+    } catch (error) {
+      lastError = error;
+      const retryable = isRetryableTargetError(error);
+      const hasRemainingAttempts = attempt < TARGET_MAX_ATTEMPTS;
+
+      console.warn(`[scheduler] ${target} 実行失敗 (${attempt}/${TARGET_MAX_ATTEMPTS}): ${formatErrorMessage(error)}`);
+
+      if (!retryable || !hasRemainingAttempts) {
+        break;
+      }
+
+      await sleep(TARGET_RETRY_DELAY_MS * attempt);
+      console.warn(`[scheduler] ${target} を再試行します (${attempt + 1}/${TARGET_MAX_ATTEMPTS})`);
+    }
   }
 
-  const entries = await fs.promises.readdir(resolvedOutputDir, { withFileTypes: true });
-  if (entries.length === 0) {
-    return;
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+async function assertOutputFileReady(
+  target: Extract<ScrapeTarget, 'tek' | 'pside' | 'amazon' | 'wd'>,
+  outputFilePath: string,
+): Promise<void> {
+  const stats = await fs.promises.stat(outputFilePath).catch(() => null);
+  if (!stats?.isFile() || stats.size <= 0) {
+    throw new Error(`[${target}] 出力CSVが確認できませんでした: ${outputFilePath}`);
   }
 
-  await Promise.all(entries.map(async (entry) => {
-    const entryPath = path.join(resolvedOutputDir, entry.name);
-    await fs.promises.rm(entryPath, { recursive: true, force: true });
-  }));
+  console.log(`[Output] ${target} CSV確認: ${outputFilePath} (${stats.size} bytes)`);
+}
 
-  console.log(`[Output] Arkアップロード完了後に出力ディレクトリを掃除: ${resolvedOutputDir}`);
+async function stageSharePointFile(
+  target: Extract<ScrapeTarget, 'tek' | 'pside' | 'amazon' | 'wd'>,
+  sourcePath: string,
+): Promise<SharePointStagedFile> {
+  const stagedPath = path.join(SHAREPOINT_STAGING_DIR, path.basename(sourcePath));
+  await fs.promises.mkdir(SHAREPOINT_STAGING_DIR, { recursive: true });
+  await fs.promises.copyFile(sourcePath, stagedPath);
+
+  console.log(`[Output] SharePointステージング完了 (${target}): ${stagedPath}`);
+
+  return {
+    target,
+    sourcePath,
+    stagedPath,
+  };
+}
+
+async function removeFileIfExists(filePath: string): Promise<void> {
+  await fs.promises.rm(filePath, { force: true }).catch(() => undefined);
+}
+
+function isRetryableTargetError(error: unknown): boolean {
+  const message = formatErrorMessage(error).toLowerCase();
+
+  return [
+    'target page, context or browser has been closed',
+    'browser has been closed',
+    'page has been closed',
+    'navigation failed because page was closed',
+    'execution context was destroyed',
+    'timeout',
+    '出力csvが確認できませんでした',
+  ].some((keyword) => message.includes(keyword));
+}
+
+function formatErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function formatOutputTimestamp(date: Date): string {

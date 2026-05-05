@@ -7,7 +7,7 @@ export class CsvManager {
   private rows: string[][] = [];
 
   constructor(fileName: string, outputDir: string = './output') {
-    const resolvedOutputDir = process.env.OUTPUT_DIR ?? outputDir;
+    const resolvedOutputDir = path.resolve(process.env.OUTPUT_DIR ?? outputDir);
     if (!fs.existsSync(resolvedOutputDir)) {
       fs.mkdirSync(resolvedOutputDir, { recursive: true });
     }

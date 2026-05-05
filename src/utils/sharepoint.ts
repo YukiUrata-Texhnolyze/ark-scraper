@@ -29,10 +29,10 @@ interface GraphCollectionResponse<T> {
   '@odata.nextLink'?: string;
 }
 
-export async function uploadFilesToSharePointIfConfigured(filePaths: string[]): Promise<void> {
+export async function uploadFilesToSharePointIfConfigured(filePaths: string[]): Promise<string[]> {
   const config = getSharePointConfig();
   if (!config) {
-    return;
+    return [];
   }
 
   const existingFiles = filePaths
@@ -42,7 +42,7 @@ export async function uploadFilesToSharePointIfConfigured(filePaths: string[]): 
 
   if (existingFiles.length === 0) {
     console.warn('[SharePoint] アップロード対象ファイルがありません');
-    return;
+    return [];
   }
 
   console.log(`[SharePoint] アップロード開始: ${existingFiles.length}件`);
@@ -61,6 +61,7 @@ export async function uploadFilesToSharePointIfConfigured(filePaths: string[]): 
   }
 
   console.log('[SharePoint] アップロード完了');
+  return existingFiles;
 }
 
 export function isSharePointUploadConfigured(): boolean {
