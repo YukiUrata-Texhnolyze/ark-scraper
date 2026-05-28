@@ -13,6 +13,7 @@
     "market:smoke": "ts-node src/main.ts market-smoke --config configs/market/sample.json",
     "market:official-site": "ts-node src/main.ts market-official-site --config configs/market/sample.json",
     "market:amazon-search": "ts-node src/main.ts market-amazon-search --config configs/market/sample.json",
+    "market:bic-search": "ts-node src/main.ts market-bic-search --config configs/market/sample.json",
     "amazon:profile": "ts-node src/tools/amazonProfileSetup.ts",
     "postinstall": "playwright install chromium"
   },

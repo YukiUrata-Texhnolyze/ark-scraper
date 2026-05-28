@@ -17,6 +17,7 @@
  *   npx ts-node src/main.ts market-smoke # Market smoke のみ
  *   npx ts-node src/main.ts market-official-site # 公式サイト巡回のみ
  *   npx ts-node src/main.ts market-amazon-search # Amazon 検索のみ
+ *   npx ts-node src/main.ts market-bic-search # BicCamera 検索のみ
  */
 
 import 'dotenv/config';
@@ -25,6 +26,7 @@ import { loadMarketResearchConfig, resolveMarketHeadless } from './config/market
 import { scrapeArkMemory } from './scrapers/arkMemory';
 import { scrapeArkSsd } from './scrapers/arkSsd';
 import { scrapeMarketAmazonSearch } from './scrapers/marketAmazonSearch';
+import { scrapeMarketBicSearch } from './scrapers/marketBicSearch';
 import { scrapeMarketOfficialSite } from './scrapers/marketOfficialSite';
 import { scrapeMarketSmoke } from './scrapers/marketSmoke';
 import { scrapeRakuten } from './scrapers/rakuten';
@@ -46,7 +48,7 @@ import fs from 'fs';
 import path from 'path';
 
 type ExistingScrapeTarget = 'tek' | 'pside' | 'amazon' | 'wd' | 'ark-memory' | 'ark-ssd';
-type MarketScrapeTarget = 'market-smoke' | 'market-official-site' | 'market-amazon-search';
+type MarketScrapeTarget = 'market-smoke' | 'market-official-site' | 'market-amazon-search' | 'market-bic-search';
 type ScrapeTarget = ExistingScrapeTarget | MarketScrapeTarget;
 
 interface CliOptions {
@@ -205,6 +207,26 @@ async function main(): Promise<void> {
           marketHeadless,
           async (context) => {
             await scrapeMarketAmazonSearch(context, marketConfigBundle.config, {
+              headless: marketHeadless,
+            });
+          },
+          { marketConfig: marketConfigBundle.config },
+        );
+        continue;
+      }
+
+      if (target === 'market-bic-search') {
+        if (!marketConfigBundle) {
+          throw new Error('market-bic-search 実行には market config が必要です');
+        }
+
+        const marketHeadless = resolveMarketHeadless(marketConfigBundle.config, headless);
+        console.log(`[Market] config 読み込み: ${marketConfigBundle.configPath}`);
+        await runTargetOnce(
+          target,
+          marketHeadless,
+          async (context) => {
+            await scrapeMarketBicSearch(context, marketConfigBundle.config, {
               headless: marketHeadless,
             });
           },
@@ -510,7 +532,7 @@ async function createContextForTarget(
 function getCliOptions(): CliOptions {
   const args = process.argv.slice(2);
   const targets: ScrapeTarget[] = [];
-  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke', 'market-official-site', 'market-amazon-search'];
+  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke', 'market-official-site', 'market-amazon-search', 'market-bic-search'];
   const defaultTargets: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd'];
   let marketConfigPath: string | undefined;
 
@@ -679,7 +701,10 @@ function isArkTarget(target: ScrapeTarget): boolean {
 }
 
 function isMarketTarget(target: ScrapeTarget): target is MarketScrapeTarget {
-  return target === 'market-smoke' || target === 'market-official-site' || target === 'market-amazon-search';
+  return target === 'market-smoke'
+    || target === 'market-official-site'
+    || target === 'market-amazon-search'
+    || target === 'market-bic-search';
 }
 
 function usesAmazonPersistentProfile(target: ScrapeTarget): boolean {

@@ -66,7 +66,7 @@ npm run market:amazon-search
 
 補足
 
-- 今回の実装は `market-smoke`、`market-official-site`、`market-amazon-search` です
+- 今回の実装は `market-smoke`、`market-official-site`、`market-amazon-search`、`market-bic-search` です
 - `market-*` は疎通確認や後続実装向けの土台であり、引数なし実行には含めません
 - 既存の `amazon` ターゲットは従来どおり特定マーチャント一覧取得用です
 
@@ -130,6 +130,32 @@ npm run market:amazon-search
 - CAPTCHA や bot 検知を強引に突破する実装は行いません
 - 既存 `amazon` ターゲットの挙動は変更しません
 
+### market-bic-search 実行方法
+
+`queries.bic` に並べた検索クエリをビックカメラ.com で巡回し、掲載有無、価格、ポイント還元、在庫表示を収集します。
+
+現在の検索 URL は `https://www.biccamera.com/bc/category/?q=<query>` です。サイト側で `preQ` や `sold_out_tp2` が付くことがあるため、最終遷移先 URL も record と証跡に残します。
+
+```bash
+npx ts-node src/main.ts market-bic-search --config configs/market/sample.json
+```
+
+```bash
+MARKET_RESEARCH_CONFIG_PATH=configs/market/sample.json npx ts-node src/main.ts market-bic-search
+```
+
+```bash
+npm run market:bic-search
+```
+
+補足
+
+- `queries.bic` が空の場合は config エラーで停止します
+- query ごとに HTML / PNG / metadata を保存します
+- 掲載なしの場合も `no_results` record を 1 件残します
+- block / error の場合も証跡と record を残します
+- CAPTCHA や bot 検知を強引に突破する実装は行いません
+
 補足
 
 - `queries.official` は任意です
@@ -168,7 +194,13 @@ npm run market:amazon-search
 			"Wacaco Nanopresso",
 			"STARESSO"
 		],
-		"bic": ["sample query"],
+		"bic": [
+			"Nicoh Coffee",
+			"NK-H01",
+			"NK-H01A",
+			"ポータブル エスプレッソマシン",
+			"ポータブル コーヒーメーカー"
+		],
 		"youtube": ["sample query"]
 	},
 	"loginStateLabel": "anonymous",
@@ -218,6 +250,12 @@ playwright-artifacts/market-research/<project>/market-official-site/<timestamp>/
 playwright-artifacts/market-research/<project>/market-amazon-search/<timestamp>/<query-slug>/
 ```
 
+`market-bic-search` も query ごとのサブディレクトリを切ります。
+
+```text
+playwright-artifacts/market-research/<project>/market-bic-search/<timestamp>/<query-slug>/
+```
+
 保存内容
 
 - `metadata.json`
@@ -234,6 +272,7 @@ playwright-artifacts/market-research/<project>/market-amazon-search/<timestamp>/
 - `.playwright/profiles/`、storage state、Cookie、ログイン情報、2FA 情報は Git に含めないでください
 - market 系ターゲットでも CAPTCHA や bot 検知を強引に突破する実装は行いません
 - `market-amazon-search` も CAPTCHA / bot detection の bypass は行わず、block 時は証跡を保存して終了します
+- `market-bic-search` も CAPTCHA / bot detection の bypass は行わず、block / no_results 時も証跡を保存して終了します
 
 ## WSL 自動定期実行
 

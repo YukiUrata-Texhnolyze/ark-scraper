@@ -113,6 +113,18 @@ export function resolveMarketAmazonQueries(config: MarketResearchProjectConfig):
   return queries;
 }
 
+export function resolveMarketBicQueries(config: MarketResearchProjectConfig): string[] {
+  const queries = config.queries?.bic
+    ?.map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0) ?? [];
+
+  if (queries.length === 0) {
+    throw new Error('[market-config] queries.bic に少なくとも1件のクエリを設定してください');
+  }
+
+  return queries;
+}
+
 function normalizeMarketResearchConfig(value: unknown, resolvedPath: string): MarketResearchConfig {
   if (!isRecord(value)) {
     throw new Error(`[market-config] JSON object を指定してください: ${resolvedPath}`);
