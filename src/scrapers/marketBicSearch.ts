@@ -487,8 +487,6 @@ function isLikelyBicBlockedByError(error: unknown): boolean {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   return isLikelyBlockedByError(error) || [
     'err_http2_protocol_error',
-    'timed out',
-    'read timed out',
   ].some((pattern) => message.includes(pattern));
 }
 
