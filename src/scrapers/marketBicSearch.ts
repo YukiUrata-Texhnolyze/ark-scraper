@@ -19,7 +19,7 @@ import {
   isLikelyTransportError,
   readMarketPageBodyText,
 } from '../utils/marketPage';
-import { BIC_HOME_URL, buildBicSearchUrl } from '../utils/bicBrowser';
+import { BIC_DEFAULT_HEADERS, BIC_HOME_URL, buildBicSearchUrl } from '../utils/bicBrowser';
 import {
   createMarketOutputPaths,
   getMarketOutputFiles,
@@ -163,6 +163,7 @@ async function crawlBicSearchQuery(
     let finalUrl = params.searchUrl;
 
     try {
+      await primeBicPage(page);
       await warmUpBicSession(page, params.timeoutMs);
       const response = await navigateBicSearch(page, params.query, params.searchUrl, params.timeoutMs);
       httpStatus = response?.status() ?? null;
@@ -478,6 +479,7 @@ function normalizeBicText(value: string | null | undefined): string {
 }
 
 async function warmUpBicSession(page: Page, timeoutMs: number): Promise<void> {
+  await primeBicPage(page);
   await page.goto(BIC_HOME_URL, {
     waitUntil: 'domcontentloaded',
     timeout: Math.min(timeoutMs, 30000),
@@ -487,20 +489,29 @@ async function warmUpBicSession(page: Page, timeoutMs: number): Promise<void> {
 }
 
 async function navigateBicSearch(page: Page, query: string, searchUrl: string, timeoutMs: number) {
+  await primeBicPage(page);
   const searchInput = page.locator('form[action*="/bc/category/"] input[name="q"]').first();
   const hasSearchForm = await searchInput.count().catch(() => 0);
 
   if (hasSearchForm > 0) {
+    const searchForm = page.locator('form[action*="/bc/category/"]').first();
+    const submitButton = searchForm.locator('button[type="submit"], input[type="submit"], .searchBtn, .bcs_searchBtn').first();
+
+    await searchInput.click({ timeout: 5000 }).catch(() => undefined);
+    await searchInput.fill('').catch(() => undefined);
+    await searchInput.pressSequentially(query, { delay: 90 }).catch(() => undefined);
+    await page.waitForTimeout(250).catch(() => undefined);
+
     const [response] = await Promise.all([
       page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: paramsSafeTimeout(timeoutMs) }).catch(() => null),
-      searchInput.evaluate((input, value) => {
-        if (!(input instanceof HTMLInputElement)) {
+      (async () => {
+        if (await submitButton.count().catch(() => 0)) {
+          await submitButton.click({ timeout: 5000 }).catch(() => undefined);
           return;
         }
 
-        input.value = String(value);
-        input.form?.submit();
-      }, query),
+        await searchInput.press('Enter').catch(() => undefined);
+      })(),
     ]);
 
     if (response !== null) {
@@ -516,6 +527,10 @@ async function navigateBicSearch(page: Page, query: string, searchUrl: string, t
 
 function paramsSafeTimeout(timeoutMs: number): number {
   return Math.max(1000, timeoutMs);
+}
+
+async function primeBicPage(page: Page): Promise<void> {
+  await page.setExtraHTTPHeaders(BIC_DEFAULT_HEADERS).catch(() => undefined);
 }
 
 async function sleep(ms: number): Promise<void> {
