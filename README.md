@@ -55,7 +55,97 @@ npm scripts
 npm run ark:memory
 npm run ark:ssd
 npm run ark:all
+npm run market:smoke
 ```
+
+## Market Research 基盤
+
+市場調査向けの `market-*` ターゲット用に、config 読み込み、出力、証跡保存の共通基盤を追加しています。
+
+補足
+
+- 今回の実装は `market-smoke` のみです
+- `market-*` は疎通確認や後続実装向けの土台であり、引数なし実行には含めません
+- 既存の `amazon` ターゲットは従来どおり特定マーチャント一覧取得用です
+
+### market-smoke 実行方法
+
+明示ターゲットでのみ実行します。
+
+```bash
+npx ts-node src/main.ts market-smoke --config configs/market/sample.json
+```
+
+または環境変数でも指定できます。
+
+```bash
+MARKET_RESEARCH_CONFIG_PATH=configs/market/sample.json npx ts-node src/main.ts market-smoke
+```
+
+サンプル npm script:
+
+```bash
+npm run market:smoke
+```
+
+### config 形式
+
+初期実装は JSON のみ対応です。
+
+```json
+{
+	"project": "sample-market-research",
+	"locale": "ja-JP",
+	"timezone": "Asia/Tokyo",
+	"viewport": {
+		"width": 1920,
+		"height": 1080
+	},
+	"headless": true,
+	"officialUrls": [
+		"https://example.com/"
+	],
+	"queries": {
+		"amazon": ["sample query"],
+		"bic": ["sample query"],
+		"youtube": ["sample query"]
+	},
+	"loginStateLabel": "anonymous",
+	"profileName": null,
+	"outputFormats": ["csv", "jsonl"]
+}
+```
+
+サンプル設定は `configs/market/sample.json` にあります。
+
+### 出力先
+
+- CSV / JSONL: `./output`
+- 例: `output/market-smoke_2026-05-25_10-00-00.csv`
+- 例: `output/market-smoke_2026-05-25_10-00-00.jsonl`
+
+### 証跡保存先
+
+市場調査用の証跡は以下へ保存します。
+
+```text
+playwright-artifacts/market-research/<project>/<target>/<timestamp>/
+```
+
+保存内容
+
+- `metadata.json`
+- `page.html`
+- `screenshot.png`
+- エラー時: `error-metadata.json`
+- エラー時: `error.html`
+- エラー時: `error.png`
+
+### Playwright profile / storage state の扱い
+
+- `.playwright/` と `playwright-artifacts/` は Git 管理対象外です
+- `.playwright/profiles/`、storage state、Cookie、ログイン情報、2FA 情報は Git に含めないでください
+- market 系ターゲットでも CAPTCHA や bot 検知を強引に突破する実装は行いません
 
 ## WSL 自動定期実行
 

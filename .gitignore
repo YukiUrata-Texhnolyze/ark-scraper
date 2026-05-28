@@ -2,6 +2,7 @@ node_modules/
 dist/
 output/
 .playwright/
+.playwright/profiles/
 playwright-artifacts/
 .env
 *.xlsx
