@@ -14,20 +14,18 @@
 import { BrowserContext } from 'playwright';
 import { CsvManager } from '../utils/csv';
 import { AmazonConfig, AmazonItem } from '../types';
+import {
+  applyAmazonStealth,
+  assertAmazonNotBlocked as assertAmazonNotBlockedPage,
+  createAmazonPage,
+  getAmazonMaxPageOpenAttempts,
+  getAmazonPageWaitMs,
+  getAmazonRetryDelayMs,
+  normalizeAmazonText,
+  warmUpAmazonSession,
+} from '../utils/amazonSession';
 
-const PAGE_WAIT_MS = 3000;
 const MARKETPLACE_ID = 'A1VC38T7YXB528';
-const AMAZON_MAX_PAGE_OPEN_ATTEMPTS = Number(process.env.AMAZON_MAX_PAGE_OPEN_ATTEMPTS ?? '8');
-const AMAZON_RETRY_DELAY_BASE_MS = Number(process.env.AMAZON_RETRY_DELAY_BASE_MS ?? '2500');
-const AMAZON_RETRY_DELAY_JITTER_MS = Number(process.env.AMAZON_RETRY_DELAY_JITTER_MS ?? '1500');
-const AMAZON_DELIVERY_POSTAL_CODE = (process.env.AMAZON_DELIVERY_POSTAL_CODE ?? '').replace(/\D/g, '');
-const AMAZON_BLOCK_PATTERNS = [
-  'ご迷惑をおかけしています',
-  'お客様のリクエストの処理中にエラーが発生しました',
-  '入力された文字を下に表示',
-  'ロボットではありません',
-  'captcha',
-];
 
 interface AmazonSummaryInfo {
   text: string;
@@ -208,169 +206,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function warmUpAmazonSession(
-  page: import('playwright').Page,
-  merchantId: string,
-): Promise<void> {
-  await page.setExtraHTTPHeaders({
-    'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Upgrade-Insecure-Requests': '1',
-  });
-  await page.goto('https://www.amazon.co.jp/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await continueAmazonShoppingIfNeeded(page);
-  await sleep(1500);
-  await ensureAmazonDeliveryLocation(page);
-  await page.goto(`https://www.amazon.co.jp/sp?marketplaceID=${MARKETPLACE_ID}&seller=${merchantId}`, {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000,
-  }).catch(() => undefined);
-  await sleep(1000);
-}
-
-async function createAmazonPage(
-  context: BrowserContext,
-): Promise<import('playwright').Page> {
-  const page = await context.newPage();
-  await page.setExtraHTTPHeaders({
-    'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Upgrade-Insecure-Requests': '1',
-  });
-
-  return page;
-}
-
-async function continueAmazonShoppingIfNeeded(
-  page: import('playwright').Page,
-): Promise<void> {
-  const bodyText = normalizeAmazonText((await page.textContent('body')) ?? '');
-  if (!bodyText.includes('ショッピングを続けてください')) {
-    return;
-  }
-
-  const continueButton = page.getByText('ショッピングを続ける').first();
-  if ((await continueButton.count()) === 0) {
-    return;
-  }
-
-  console.log('[Amazon] continue-shopping 中間画面を突破');
-  await continueButton.click({ timeout: 10000 }).catch(() => undefined);
-  await page.waitForLoadState('domcontentloaded').catch(() => undefined);
-  await sleep(2500);
-}
-
-async function ensureAmazonDeliveryLocation(
-  page: import('playwright').Page,
-): Promise<void> {
-  const currentDestination = await getAmazonDeliveryDestination(page);
-  if (currentDestination) {
-    console.log(`[Amazon] 現在のお届け先: ${currentDestination}`);
-  }
-
-  if (!AMAZON_DELIVERY_POSTAL_CODE) {
-    return;
-  }
-
-  const trigger = page.locator('#nav-global-location-popover-link, #glow-ingress-block').first();
-  if ((await trigger.count()) === 0) {
-    console.warn('[Amazon] お届け先トリガーが見つからないため更新をスキップ');
-    return;
-  }
-
-  await trigger.click({ timeout: 10000 }).catch(() => undefined);
-  await sleep(1500);
-
-  const firstZipInput = page.locator('#GLUXZipUpdateInput_0, #GLUXZipUpdateInput').first();
-  if ((await firstZipInput.count()) === 0) {
-    console.warn('[Amazon] 郵便番号入力欄が見つからないため更新をスキップ');
-    await closeAmazonDeliveryPopover(page);
-    return;
-  }
-
-  const [zipPart1, zipPart2] = splitAmazonPostalCode(AMAZON_DELIVERY_POSTAL_CODE);
-  await firstZipInput.fill(zipPart1).catch(() => undefined);
-
-  const secondZipInput = page.locator('#GLUXZipUpdateInput_1').first();
-  if ((await secondZipInput.count()) > 0 && zipPart2) {
-    await secondZipInput.fill(zipPart2).catch(() => undefined);
-  }
-
-  await page.locator('#GLUXZipUpdate').first().click({ timeout: 10000 }).catch(() => undefined);
-  await sleep(3500);
-  await closeAmazonDeliveryPopover(page);
-
-  const updatedDestination = await getAmazonDeliveryDestination(page);
-  if (updatedDestination) {
-    console.log(`[Amazon] 更新後のお届け先: ${updatedDestination}`);
-  }
-}
-
-async function closeAmazonDeliveryPopover(
-  page: import('playwright').Page,
-): Promise<void> {
-  const closeButton = page.locator('#GLUXConfirmClose').first();
-  if ((await closeButton.count()) > 0) {
-    await closeButton.click({ timeout: 5000 }).catch(() => undefined);
-    await sleep(1000);
-  }
-}
-
-async function getAmazonDeliveryDestination(
-  page: import('playwright').Page,
-): Promise<string> {
-  try {
-    return normalizeAmazonText(
-      (await page.locator('#glow-ingress-line2').first().textContent({ timeout: 1500 })) ?? '',
-    );
-  } catch {
-    return '';
-  }
-}
-
-function splitAmazonPostalCode(postalCode: string): [string, string] {
-  if (postalCode.length <= 3) {
-    return [postalCode, ''];
-  }
-
-  return [postalCode.slice(0, 3), postalCode.slice(3, 7)];
-}
-
-function normalizeAmazonText(value: string): string {
-  return value.replace(/\s+/g, ' ').trim();
-}
-
-async function applyAmazonStealth(context: BrowserContext): Promise<void> {
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    Object.defineProperty(navigator, 'languages', {
-      get: () => ['ja-JP', 'ja', 'en-US', 'en'],
-    });
-    Object.defineProperty(navigator, 'plugins', {
-      get: () => [1, 2, 3, 4, 5],
-    });
-
-    if (!(window as Window & { chrome?: object }).chrome) {
-      Object.defineProperty(window, 'chrome', {
-        value: { runtime: {} },
-        configurable: true,
-      });
-    }
-  });
-}
-
 async function assertAmazonNotBlocked(
   page: import('playwright').Page,
   pageNum: number,
 ): Promise<void> {
-  const title = await page.title();
-  const bodyText = ((await page.textContent('body')) ?? '').replace(/\s+/g, ' ').trim();
-  const normalized = `${title} ${bodyText}`.toLowerCase();
-  const blocked = AMAZON_BLOCK_PATTERNS.some((pattern) => normalized.includes(pattern.toLowerCase()));
-
-  if (blocked) {
-    throw new Error(
-      `[Amazon] ページ ${pageNum} はボット検知またはエラーページでした: ${title || '無題'}`,
-    );
-  }
+  return assertAmazonNotBlockedPage(page, `ページ ${pageNum}`);
 }
 
 async function openAmazonResultsPage(
@@ -406,12 +246,15 @@ async function openAmazonPageWithRetries(
   preferredUrl?: string,
 ): Promise<import('playwright').Page> {
   let lastError: Error | undefined;
+  const maxAttempts = getAmazonMaxPageOpenAttempts();
 
-  for (let attempt = 1; attempt <= AMAZON_MAX_PAGE_OPEN_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const page = await createAmazonPage(context);
 
     try {
-      await warmUpAmazonSession(page, merchantId);
+      await warmUpAmazonSession(page, {
+        followUpUrl: `https://www.amazon.co.jp/sp?marketplaceID=${MARKETPLACE_ID}&seller=${merchantId}`,
+      });
       await openAmazonResultsPage(page, merchantId, pageNum, expectedTotalPages, preferredUrl);
       if (attempt > 1) {
         console.log(`[Amazon] ページ ${pageNum} は ${attempt} 回目で成功`);
@@ -419,10 +262,10 @@ async function openAmazonPageWithRetries(
       return page;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      console.warn(`[Amazon] ページ ${pageNum} 試行 ${attempt}/${AMAZON_MAX_PAGE_OPEN_ATTEMPTS} 失敗: ${lastError.message}`);
+      console.warn(`[Amazon] ページ ${pageNum} 試行 ${attempt}/${maxAttempts} 失敗: ${lastError.message}`);
       await page.close().catch(() => undefined);
 
-      if (attempt < AMAZON_MAX_PAGE_OPEN_ATTEMPTS) {
+      if (attempt < maxAttempts) {
         await sleep(getAmazonRetryDelayMs(attempt));
       }
     }
@@ -547,7 +390,7 @@ async function assertAmazonResultsReady(
   pageNum: number,
   expectedTotalPages: number,
 ): Promise<void> {
-  await assertAmazonNotBlocked(page, pageNum);
+  await assertAmazonNotBlockedPage(page, `ページ ${pageNum}`);
 
   const summary = await getAmazonSummaryInfo(page);
   if (summary && summary.end < summary.start) {
@@ -599,15 +442,6 @@ async function countAmazonResultNodes(
     .locator('.s-main-slot [data-component-type="s-search-result"][data-asin]:not([data-asin=""]), .s-main-slot [data-asin]:not([data-asin=""])')
     .count()
     .catch(() => 0);
-}
-
-function getAmazonRetryDelayMs(attempt: number): number {
-  const jitter = Math.floor(Math.random() * AMAZON_RETRY_DELAY_JITTER_MS);
-  return AMAZON_RETRY_DELAY_BASE_MS * attempt + jitter;
-}
-
-function getAmazonPageWaitMs(): number {
-  return PAGE_WAIT_MS + Math.floor(Math.random() * 1200);
 }
 
 function buildAmazonPageUrl(currentUrl: string, pageNum: number): string {

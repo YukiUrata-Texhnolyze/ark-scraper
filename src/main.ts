@@ -16,6 +16,7 @@
  *   npx ts-node src/main.ts ark-ssd    # Ark SSDのみ
  *   npx ts-node src/main.ts market-smoke # Market smoke のみ
  *   npx ts-node src/main.ts market-official-site # 公式サイト巡回のみ
+ *   npx ts-node src/main.ts market-amazon-search # Amazon 検索のみ
  */
 
 import 'dotenv/config';
@@ -23,6 +24,7 @@ import { chromium, Browser, BrowserContext } from 'playwright';
 import { loadMarketResearchConfig, resolveMarketHeadless } from './config/marketResearchConfig';
 import { scrapeArkMemory } from './scrapers/arkMemory';
 import { scrapeArkSsd } from './scrapers/arkSsd';
+import { scrapeMarketAmazonSearch } from './scrapers/marketAmazonSearch';
 import { scrapeMarketOfficialSite } from './scrapers/marketOfficialSite';
 import { scrapeMarketSmoke } from './scrapers/marketSmoke';
 import { scrapeRakuten } from './scrapers/rakuten';
@@ -44,7 +46,7 @@ import fs from 'fs';
 import path from 'path';
 
 type ExistingScrapeTarget = 'tek' | 'pside' | 'amazon' | 'wd' | 'ark-memory' | 'ark-ssd';
-type MarketScrapeTarget = 'market-smoke' | 'market-official-site';
+type MarketScrapeTarget = 'market-smoke' | 'market-official-site' | 'market-amazon-search';
 type ScrapeTarget = ExistingScrapeTarget | MarketScrapeTarget;
 
 interface CliOptions {
@@ -183,6 +185,26 @@ async function main(): Promise<void> {
           marketHeadless,
           async (context) => {
             await scrapeMarketOfficialSite(context, marketConfigBundle.config, {
+              headless: marketHeadless,
+            });
+          },
+          { marketConfig: marketConfigBundle.config },
+        );
+        continue;
+      }
+
+      if (target === 'market-amazon-search') {
+        if (!marketConfigBundle) {
+          throw new Error('market-amazon-search 実行には market config が必要です');
+        }
+
+        const marketHeadless = resolveMarketHeadless(marketConfigBundle.config, headless);
+        console.log(`[Market] config 読み込み: ${marketConfigBundle.configPath}`);
+        await runTargetOnce(
+          target,
+          marketHeadless,
+          async (context) => {
+            await scrapeMarketAmazonSearch(context, marketConfigBundle.config, {
               headless: marketHeadless,
             });
           },
@@ -421,16 +443,19 @@ async function createContextForTarget(
   getBrowser: () => Promise<Browser>,
   options: TargetRunOptions = {},
 ): Promise<BrowserContext> {
-  if (target === 'amazon') {
+  if (usesAmazonPersistentProfile(target)) {
     const userDataDir = process.env.AMAZON_PERSISTENT_USER_DATA_DIR;
     if (userDataDir) {
       console.log(`[Amazon] 永続プロファイルを使用: ${userDataDir}`);
+      const locale = options.marketConfig?.locale ?? 'ja-JP';
+      const timezoneId = options.marketConfig?.timezone ?? 'Asia/Tokyo';
+      const viewport = options.marketConfig?.viewport ?? { width: 1920, height: 1080 };
       return chromium.launchPersistentContext(userDataDir, {
         headless,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        locale: 'ja-JP',
-        timezoneId: 'Asia/Tokyo',
-        viewport: { width: 1920, height: 1080 },
+        locale,
+        timezoneId,
+        viewport,
         colorScheme: 'light',
       });
     }
@@ -485,7 +510,7 @@ async function createContextForTarget(
 function getCliOptions(): CliOptions {
   const args = process.argv.slice(2);
   const targets: ScrapeTarget[] = [];
-  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke', 'market-official-site'];
+  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke', 'market-official-site', 'market-amazon-search'];
   const defaultTargets: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd'];
   let marketConfigPath: string | undefined;
 
@@ -654,7 +679,11 @@ function isArkTarget(target: ScrapeTarget): boolean {
 }
 
 function isMarketTarget(target: ScrapeTarget): target is MarketScrapeTarget {
-  return target === 'market-smoke' || target === 'market-official-site';
+  return target === 'market-smoke' || target === 'market-official-site' || target === 'market-amazon-search';
+}
+
+function usesAmazonPersistentProfile(target: ScrapeTarget): boolean {
+  return target === 'amazon' || target === 'market-amazon-search';
 }
 
 main();

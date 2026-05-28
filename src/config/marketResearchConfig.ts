@@ -101,6 +101,18 @@ export function resolveFirstMarketQuery(config: MarketResearchProjectConfig): st
   return null;
 }
 
+export function resolveMarketAmazonQueries(config: MarketResearchProjectConfig): string[] {
+  const queries = config.queries?.amazon
+    ?.map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0) ?? [];
+
+  if (queries.length === 0) {
+    throw new Error('[market-config] queries.amazon に少なくとも1件のクエリを設定してください');
+  }
+
+  return queries;
+}
+
 function normalizeMarketResearchConfig(value: unknown, resolvedPath: string): MarketResearchConfig {
   if (!isRecord(value)) {
     throw new Error(`[market-config] JSON object を指定してください: ${resolvedPath}`);
