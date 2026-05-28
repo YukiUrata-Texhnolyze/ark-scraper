@@ -1,0 +1,30 @@
+{
+  "project": "sample-market-research",
+  "locale": "ja-JP",
+  "timezone": "Asia/Tokyo",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "headless": true,
+  "officialUrls": [
+    "https://example.com/"
+  ],
+  "queries": {
+    "amazon": [
+      "sample query"
+    ],
+    "bic": [
+      "sample query"
+    ],
+    "youtube": [
+      "sample query"
+    ]
+  },
+  "loginStateLabel": "anonymous",
+  "profileName": null,
+  "outputFormats": [
+    "csv",
+    "jsonl"
+  ]
+}

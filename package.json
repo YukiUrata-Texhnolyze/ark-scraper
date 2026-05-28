@@ -10,6 +10,7 @@
     "ark:memory": "ts-node src/main.ts ark-memory",
     "ark:ssd": "ts-node src/main.ts ark-ssd",
     "ark:all": "ts-node src/main.ts ark-memory ark-ssd",
+    "market:smoke": "ts-node src/main.ts market-smoke --config configs/market/sample.json",
     "amazon:profile": "ts-node src/tools/amazonProfileSetup.ts",
     "postinstall": "playwright install chromium"
   },

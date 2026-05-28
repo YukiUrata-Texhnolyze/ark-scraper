@@ -101,3 +101,86 @@ export interface ArkMemoryConfig extends ArkBaseConfig {
 }
 
 export interface ArkSsdConfig extends ArkBaseConfig {}
+
+export type MarketResearchTarget =
+  | 'market-smoke'
+  | 'market-official-site'
+  | 'market-amazon-search'
+  | 'market-bic-search'
+  | 'market-amazon-product'
+  | 'market-youtube-search'
+  | 'market-tiktok-search'
+  | 'market-instagram-search'
+  | 'market-x-search';
+
+export type MarketOutputFormat = 'csv' | 'jsonl';
+
+export interface MarketResearchViewport {
+  width: number;
+  height: number;
+}
+
+export interface MarketResearchQueryGroups {
+  amazon?: string[];
+  bic?: string[];
+  youtube?: string[];
+  tiktok?: string[];
+  instagram?: string[];
+  x?: string[];
+  official?: string[];
+  [key: string]: string[] | undefined;
+}
+
+export interface MarketResearchProjectConfig {
+  project: string;
+  locale: string;
+  timezone: string;
+  viewport: MarketResearchViewport;
+  headless?: boolean;
+  officialUrls?: string[];
+  queries?: MarketResearchQueryGroups;
+  loginStateLabel?: string;
+  profileName?: string | null;
+  outputFormats?: MarketOutputFormat[];
+}
+
+export interface MarketResearchConfig extends MarketResearchProjectConfig {}
+
+export interface MarketArtifactErrorInfo {
+  name?: string;
+  message: string;
+  stack?: string;
+}
+
+export interface MarketArtifactMetadata {
+  project: string;
+  target: MarketResearchTarget;
+  query?: string | null;
+  url: string;
+  finalUrl?: string | null;
+  crawledAt: string;
+  locale: string;
+  timezone: string;
+  viewport: MarketResearchViewport;
+  headless: boolean;
+  loginStateLabel: string;
+  profileName: string | null;
+  blocked: boolean;
+  error?: MarketArtifactErrorInfo | null;
+}
+
+export interface MarketRunContext {
+  target: MarketResearchTarget;
+  project: string;
+  locale: string;
+  timezone: string;
+  viewport: MarketResearchViewport;
+  headless: boolean;
+  query?: string | null;
+  url: string;
+  finalUrl?: string | null;
+  crawledAt: string;
+  loginStateLabel: string;
+  profileName: string | null;
+  blocked: boolean;
+}

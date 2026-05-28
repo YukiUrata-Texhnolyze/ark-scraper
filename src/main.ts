@@ -18,8 +18,10 @@
 
 import 'dotenv/config';
 import { chromium, Browser, BrowserContext } from 'playwright';
+import { loadMarketResearchConfig, resolveMarketHeadless } from './config/marketResearchConfig';
 import { scrapeArkMemory } from './scrapers/arkMemory';
 import { scrapeArkSsd } from './scrapers/arkSsd';
+import { scrapeMarketSmoke } from './scrapers/marketSmoke';
 import { scrapeRakuten } from './scrapers/rakuten';
 import { scrapeAmazon } from './scrapers/amazon';
 import { scrapeWD } from './scrapers/wd';
@@ -27,11 +29,29 @@ import { sendErrorEmail } from './utils/mailer';
 import { DEFAULT_ARK_USER_AGENT, parseUrlList } from './utils/arkHelpers';
 import { isSharePointUploadConfigured, uploadFilesToSharePointIfConfigured } from './utils/sharepoint';
 import { uploadFilesToR2IfConfigured, R2UploadFile } from './utils/storageUpload';
-import { RakutenConfig, AmazonConfig, WDConfig, ArkMemoryConfig, ArkSsdConfig } from './types';
+import {
+  RakutenConfig,
+  AmazonConfig,
+  WDConfig,
+  ArkMemoryConfig,
+  ArkSsdConfig,
+  MarketResearchConfig,
+} from './types';
 import fs from 'fs';
 import path from 'path';
 
-type ScrapeTarget = 'tek' | 'pside' | 'amazon' | 'wd' | 'ark-memory' | 'ark-ssd';
+type ExistingScrapeTarget = 'tek' | 'pside' | 'amazon' | 'wd' | 'ark-memory' | 'ark-ssd';
+type MarketScrapeTarget = 'market-smoke';
+type ScrapeTarget = ExistingScrapeTarget | MarketScrapeTarget;
+
+interface CliOptions {
+  targets: ScrapeTarget[];
+  marketConfigPath?: string;
+}
+
+interface TargetRunOptions {
+  marketConfig?: MarketResearchConfig;
+}
 
 // =====================================================
 // 設定定数
@@ -81,11 +101,14 @@ const WD_CONFIG: WDConfig = {
 // =====================================================
 
 async function main(): Promise<void> {
-  const targets = getTargets();
+  const { targets, marketConfigPath } = getCliOptions();
   const headless = process.env.HEADLESS !== 'false';
   const sharePointFiles: SharePointStagedFile[] = [];
   const r2Files: R2UploadFile[] = [];
   const ranOnlyArkTargets = targets.length > 0 && targets.every(isArkTarget);
+  const marketConfigBundle = targets.some(isMarketTarget)
+    ? await loadMarketResearchConfig(marketConfigPath)
+    : undefined;
 
   try {
     for (const target of targets) {
@@ -122,6 +145,26 @@ async function main(): Promise<void> {
           await scrapeWD(context, WD_CONFIG);
         });
         sharePointFiles.push(await stageSharePointFile(target, outputFilePath));
+        continue;
+      }
+
+      if (target === 'market-smoke') {
+        if (!marketConfigBundle) {
+          throw new Error('market-smoke 実行には market config が必要です');
+        }
+
+        const marketHeadless = resolveMarketHeadless(marketConfigBundle.config, headless);
+        console.log(`[Market] config 読み込み: ${marketConfigBundle.configPath}`);
+        await runTargetOnce(
+          target,
+          marketHeadless,
+          async (context) => {
+            await scrapeMarketSmoke(context, marketConfigBundle.config, {
+              headless: marketHeadless,
+            });
+          },
+          { marketConfig: marketConfigBundle.config },
+        );
         continue;
       }
 
@@ -217,6 +260,7 @@ async function runTargetOnce<T>(
   target: ScrapeTarget,
   headless: boolean,
   handler: (context: BrowserContext) => Promise<T>,
+  options: TargetRunOptions = {},
 ): Promise<T> {
   let browser: Browser | null = null;
 
@@ -232,7 +276,7 @@ async function runTargetOnce<T>(
   };
 
   try {
-    return await runWithTargetContext(target, headless, getBrowser, handler);
+    return await runWithTargetContext(target, headless, getBrowser, handler, options);
   } finally {
     const currentBrowser = browser as Browser | null;
     if (currentBrowser !== null) {
@@ -352,6 +396,7 @@ async function createContextForTarget(
   target: ScrapeTarget,
   headless: boolean,
   getBrowser: () => Promise<Browser>,
+  options: TargetRunOptions = {},
 ): Promise<BrowserContext> {
   if (target === 'amazon') {
     const userDataDir = process.env.AMAZON_PERSISTENT_USER_DATA_DIR;
@@ -366,6 +411,21 @@ async function createContextForTarget(
         colorScheme: 'light',
       });
     }
+  }
+
+  if (isMarketTarget(target)) {
+    const marketConfig = options.marketConfig;
+    if (!marketConfig) {
+      throw new Error(`${target} 実行には market config が必要です`);
+    }
+
+    const browser = await getBrowser();
+    return browser.newContext({
+      locale: marketConfig.locale,
+      timezoneId: marketConfig.timezone,
+      viewport: marketConfig.viewport,
+      colorScheme: 'light',
+    });
   }
 
   if (isArkTarget(target)) {
@@ -396,26 +456,62 @@ async function createContextForTarget(
 }
 
 /**
- * コマンドライン引数からターゲットを取得する
+ * コマンドライン引数からターゲットとオプションを取得する
  * 引数なし → 既存スクレイパーのみ実行 (tek → pside → amazon → wd)
  */
-function getTargets(): ScrapeTarget[] {
+function getCliOptions(): CliOptions {
   const args = process.argv.slice(2);
-  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd'];
+  const targets: ScrapeTarget[] = [];
+  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke'];
   const defaultTargets: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd'];
+  let marketConfigPath: string | undefined;
 
-  if (args.length === 0) {
-    return [...defaultTargets];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === '--config') {
+      const nextValue = args[index + 1];
+      if (!nextValue || nextValue.startsWith('--')) {
+        console.error('--config には設定ファイルパスが必要です');
+        process.exit(1);
+      }
+
+      marketConfigPath = nextValue;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--config=')) {
+      marketConfigPath = arg.slice('--config='.length);
+      continue;
+    }
+
+    if (arg.startsWith('--')) {
+      console.error(`不正なオプション: ${arg}`);
+      process.exit(1);
+    }
+
+    targets.push(arg as ScrapeTarget);
   }
 
-  const invalid = args.filter((arg) => !valid.includes(arg as ScrapeTarget));
+  if (targets.length === 0) {
+    return {
+      targets: [...defaultTargets],
+      marketConfigPath,
+    };
+  }
+
+  const invalid = targets.filter((target) => !valid.includes(target));
   if (invalid.length > 0) {
     console.error(`不正な引数: ${invalid.join(', ')}`);
     console.error(`有効な引数: ${valid.join(', ')}`);
     process.exit(1);
   }
 
-  return args as ScrapeTarget[];
+  return {
+    targets,
+    marketConfigPath,
+  };
 }
 
 async function runWithTargetContext<T>(
@@ -423,8 +519,9 @@ async function runWithTargetContext<T>(
   headless: boolean,
   getBrowser: () => Promise<Browser>,
   handler: (context: BrowserContext) => Promise<T>,
+  options: TargetRunOptions = {},
 ): Promise<T> {
-  const context = await createContextForTarget(target, headless, getBrowser);
+  const context = await createContextForTarget(target, headless, getBrowser, options);
 
   try {
     return await handler(context);
@@ -531,6 +628,10 @@ function resolveNumberEnv(envName: string, fallback: number): number {
 
 function isArkTarget(target: ScrapeTarget): boolean {
   return target === 'ark-memory' || target === 'ark-ssd';
+}
+
+function isMarketTarget(target: ScrapeTarget): target is MarketScrapeTarget {
+  return target === 'market-smoke';
 }
 
 main();
