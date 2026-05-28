@@ -64,3 +64,21 @@ export function isLikelyBlockedByError(error: unknown): boolean {
     '429',
   ].some((pattern) => message.includes(pattern));
 }
+
+export function isLikelyTransportError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return [
+    'err_http2_protocol_error',
+    'net::err_',
+    'tls',
+    'ssl',
+    'certificate',
+    'econnreset',
+    'connection reset',
+    'connection refused',
+    'connection closed',
+    'socket hang up',
+    'name not resolved',
+    'internet disconnected',
+  ].some((pattern) => message.includes(pattern));
+}

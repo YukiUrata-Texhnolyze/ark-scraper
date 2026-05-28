@@ -20,7 +20,7 @@ import {
   readAmazonBlockState,
   warmUpAmazonSession,
 } from '../utils/amazonSession';
-import { buildMarketArtifactMetadata, isLikelyBlockedByError } from '../utils/marketPage';
+import { buildMarketArtifactMetadata, isLikelyBlockedByError, isLikelyTransportError } from '../utils/marketPage';
 import {
   createMarketOutputPaths,
   getMarketOutputFiles,
@@ -28,7 +28,7 @@ import {
   writeMarketOutputs,
 } from '../utils/marketOutput';
 
-type MarketAmazonSearchStatus = 'ok' | 'blocked' | 'error';
+type MarketAmazonSearchStatus = 'ok' | 'blocked' | 'transport_error' | 'error';
 
 interface AmazonSearchCandidate {
   rank: number;
@@ -157,7 +157,7 @@ export async function scrapeMarketAmazonSearch(
   const summary = summarizeStatuses(records);
   const outputFiles = getMarketOutputFiles(outputPaths, outputFormats);
 
-  console.log(`[Market] amazon-search 完了: ok=${summary.ok} blocked=${summary.blocked} error=${summary.error}`);
+  console.log(`[Market] amazon-search 完了: ok=${summary.ok} blocked=${summary.blocked} transport_error=${summary.transport_error} error=${summary.error}`);
   console.log(`[Market] 出力: ${outputFiles.join(', ')}`);
 
   return {
@@ -304,7 +304,8 @@ async function crawlAmazonSearchQuery(
         title: '',
         bodyText: '',
       }));
-      const status: MarketAmazonSearchStatus = blockState.blocked ? 'blocked' : 'error';
+      const transportError = !blockState.blocked && isLikelyTransportError(error);
+      const status: MarketAmazonSearchStatus = blockState.blocked ? 'blocked' : transportError ? 'transport_error' : 'error';
       const metadata = buildArtifactMetadata({
         config,
         query: params.query,
@@ -635,6 +636,7 @@ function summarizeStatuses(records: MarketAmazonSearchRecord[]): Record<MarketAm
   }, {
     ok: 0,
     blocked: 0,
+    transport_error: 0,
     error: 0,
   });
 }
