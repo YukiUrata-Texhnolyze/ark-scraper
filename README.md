@@ -57,6 +57,7 @@ npm run ark:ssd
 npm run ark:all
 npm run market:smoke
 npm run market:official-site
+npm run market:amazon-search
 ```
 
 ## Market Research 基盤
@@ -65,7 +66,7 @@ npm run market:official-site
 
 補足
 
-- 今回の実装は `market-smoke` と `market-official-site` です
+- 今回の実装は `market-smoke`、`market-official-site`、`market-amazon-search` です
 - `market-*` は疎通確認や後続実装向けの土台であり、引数なし実行には含めません
 - 既存の `amazon` ターゲットは従来どおり特定マーチャント一覧取得用です
 
@@ -105,6 +106,30 @@ MARKET_RESEARCH_CONFIG_PATH=configs/market/sample.json npx ts-node src/main.ts m
 npm run market:official-site
 ```
 
+### market-amazon-search 実行方法
+
+`queries.amazon` に並べた検索クエリを Amazon Japan で巡回し、上位 20 件程度の競合商品を収集します。
+
+```bash
+npx ts-node src/main.ts market-amazon-search --config configs/market/sample.json
+```
+
+```bash
+MARKET_RESEARCH_CONFIG_PATH=configs/market/sample.json npx ts-node src/main.ts market-amazon-search
+```
+
+```bash
+npm run market:amazon-search
+```
+
+補足
+
+- `queries.amazon` が空の場合は config エラーで停止します
+- query ごとに HTML / PNG / metadata を保存します
+- block / CAPTCHA / continue-shopping 中間画面でも証跡と record を残します
+- CAPTCHA や bot 検知を強引に突破する実装は行いません
+- 既存 `amazon` ターゲットの挙動は変更しません
+
 補足
 
 - `queries.official` は任意です
@@ -132,7 +157,17 @@ npm run market:official-site
 	],
 	"queries": {
 		"official": ["example domain overview", "missing example product page"],
-		"amazon": ["sample query"],
+		"amazon": [
+			"Nicoh Coffee",
+			"NK-H01",
+			"NK-H01A",
+			"ポータブル エスプレッソマシン",
+			"ポータブル コーヒーメーカー",
+			"電動 エスプレッソマシン ポータブル",
+			"OutIn Nano",
+			"Wacaco Nanopresso",
+			"STARESSO"
+		],
 		"bic": ["sample query"],
 		"youtube": ["sample query"]
 	},
@@ -177,6 +212,12 @@ playwright-artifacts/market-research/<project>/<target>/<timestamp>/
 playwright-artifacts/market-research/<project>/market-official-site/<timestamp>/<url-slug>/
 ```
 
+`market-amazon-search` は query ごとのサブディレクトリを切ります。
+
+```text
+playwright-artifacts/market-research/<project>/market-amazon-search/<timestamp>/<query-slug>/
+```
+
 保存内容
 
 - `metadata.json`
@@ -192,6 +233,7 @@ playwright-artifacts/market-research/<project>/market-official-site/<timestamp>/
 - `.playwright/` と `playwright-artifacts/` は Git 管理対象外です
 - `.playwright/profiles/`、storage state、Cookie、ログイン情報、2FA 情報は Git に含めないでください
 - market 系ターゲットでも CAPTCHA や bot 検知を強引に突破する実装は行いません
+- `market-amazon-search` も CAPTCHA / bot detection の bypass は行わず、block 時は証跡を保存して終了します
 
 ## WSL 自動定期実行
 
