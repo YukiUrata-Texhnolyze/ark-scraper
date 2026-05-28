@@ -14,6 +14,7 @@ import {
 } from '../utils/marketArtifacts';
 import {
   buildMarketArtifactMetadata,
+  isBrowserInternalErrorPage,
   isLikelyBlocked,
   isLikelyBlockedByError,
   isLikelyTransportError,
@@ -98,6 +99,24 @@ export async function scrapeMarketBicSearch(
   const artifactDirs: string[] = [];
   const records: MarketBicSearchRecord[] = [];
 
+  const preflight = await preflightBicSession(context, timeoutMs);
+  if (preflight.status === 'blocked' || preflight.status === 'transport_error') {
+    console.warn(
+      `[Market] bic-search preflight status=${preflight.status} title=${preflight.title || '(empty)'}; query 巡回を中止します`,
+    );
+
+    await writeMarketOutputs(outputPaths, outputFormats, []);
+    const outputFiles = getMarketOutputFiles(outputPaths, outputFormats);
+    console.log('[Market] bic-search 完了: ok=0 no_results=0 blocked=0 transport_error=0 error=0');
+    console.log(`[Market] 出力: ${outputFiles.join(', ')}`);
+
+    return {
+      artifactDirs,
+      outputFiles,
+      records,
+    };
+  }
+
   for (const [index, query] of queries.entries()) {
     const searchUrl = buildBicSearchUrl(query);
     const artifactPaths = createMarketArtifactPaths(
@@ -121,6 +140,11 @@ export async function scrapeMarketBicSearch(
     });
 
     records.push(...queryResult.records);
+
+    if (queryResult.records.every((record) => record.status === 'blocked' || record.status === 'transport_error')) {
+      console.warn(`[Market] bic-search query="${query}" status=${queryResult.records[0]?.status ?? 'unknown'}; 残り query を中止します`);
+      break;
+    }
   }
 
   await writeMarketOutputs(
@@ -164,8 +188,7 @@ async function crawlBicSearchQuery(
 
     try {
       await primeBicPage(page);
-      await warmUpBicSession(page, params.timeoutMs);
-      const response = await navigateBicSearch(page, params.query, params.searchUrl, params.timeoutMs);
+      const response = await navigateBicSearch(page, params.query, params.timeoutMs);
       httpStatus = response?.status() ?? null;
 
       await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
@@ -316,8 +339,18 @@ async function extractBicSearchResults(page: Page, maxResults: number): Promise<
 }
 
 async function readBicBlockState(page: Page, status: number | null): Promise<{ blocked: boolean; title: string; bodyText: string }> {
+  const currentUrl = page.url() || '';
   const title = normalizeBicText(await page.title().catch(() => ''));
   const bodyText = normalizeBicText(await readMarketPageBodyText(page));
+
+  if (isBrowserInternalErrorPage(currentUrl)) {
+    return {
+      blocked: status === 403 || status === 429,
+      title,
+      bodyText,
+    };
+  }
+
   const normalized = `${title}\n${bodyText}`.toLowerCase();
   const blocked = isLikelyBlocked(status, bodyText) || [
     'powered and protected by',
@@ -325,6 +358,7 @@ async function readBicBlockState(page: Page, status: number | null): Promise<{ b
     'forbidden',
     'captcha',
     'not a robot',
+    '通信に問題があるためアクセスを遮断しました。',
     'アクセスが集中',
     'しばらくしてから再度アクセスしてください',
     '不正なアクセス',
@@ -478,55 +512,107 @@ function normalizeBicText(value: string | null | undefined): string {
     .trim();
 }
 
-async function warmUpBicSession(page: Page, timeoutMs: number): Promise<void> {
+async function openBicHome(page: Page, timeoutMs: number) {
   await primeBicPage(page);
-  await page.goto(BIC_HOME_URL, {
+  const response = await page.goto(BIC_HOME_URL, {
     waitUntil: 'domcontentloaded',
     timeout: Math.min(timeoutMs, 30000),
-  }).catch(() => undefined);
+  });
   await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => undefined);
-  await page.waitForTimeout(500).catch(() => undefined);
+  await page.waitForTimeout(800).catch(() => undefined);
+  return response;
 }
 
-async function navigateBicSearch(page: Page, query: string, searchUrl: string, timeoutMs: number) {
-  await primeBicPage(page);
-  const searchInput = page.locator('form[action*="/bc/category/"] input[name="q"]').first();
-  const hasSearchForm = await searchInput.count().catch(() => 0);
+async function preflightBicSession(
+  context: BrowserContext,
+  timeoutMs: number,
+): Promise<{ status: 'ok' | 'blocked' | 'transport_error' | 'error'; title: string; httpStatus: number | null }> {
+  const page = await context.newPage();
+  let httpStatus: number | null = null;
 
-  if (hasSearchForm > 0) {
-    const searchForm = page.locator('form[action*="/bc/category/"]').first();
-    const submitButton = searchForm.locator('button[type="submit"], input[type="submit"], .searchBtn, .bcs_searchBtn').first();
+  try {
+    httpStatus = (await openBicHome(page, timeoutMs).catch(() => null))?.status() ?? httpStatus;
 
-    await searchInput.click({ timeout: 5000 }).catch(() => undefined);
-    await searchInput.fill('').catch(() => undefined);
-    await searchInput.pressSequentially(query, { delay: 90 }).catch(() => undefined);
-    await page.waitForTimeout(250).catch(() => undefined);
-
-    const [response] = await Promise.all([
-      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: paramsSafeTimeout(timeoutMs) }).catch(() => null),
-      (async () => {
-        if (await submitButton.count().catch(() => 0)) {
-          await submitButton.click({ timeout: 5000 }).catch(() => undefined);
-          return;
-        }
-
-        await searchInput.press('Enter').catch(() => undefined);
-      })(),
-    ]);
-
-    if (response !== null) {
-      return response;
+    const blockState = await readBicBlockState(page, httpStatus);
+    if (blockState.blocked) {
+      return {
+        status: 'blocked',
+        title: blockState.title,
+        httpStatus,
+      };
     }
+
+    return {
+      status: 'ok',
+      title: blockState.title,
+      httpStatus,
+    };
+  } catch (error) {
+    const blockState = await readBicBlockState(page, httpStatus).catch(() => ({
+      blocked: false,
+      title: '',
+      bodyText: '',
+    }));
+    const blocked = blockState.blocked || isLikelyBicBlockedByError(error);
+    const transportError = !blocked && isLikelyTransportError(error);
+
+    return {
+      status: blocked ? 'blocked' : transportError ? 'transport_error' : 'error',
+      title: blockState.title,
+      httpStatus,
+    };
+  } finally {
+    await page.close().catch(() => undefined);
+  }
+}
+
+async function navigateBicSearch(page: Page, query: string, timeoutMs: number) {
+  await openBicHome(page, timeoutMs);
+
+  const searchForm = page.locator('form[action*="/bc/category/"]').first();
+  const searchInput = searchForm.locator('input[name="q"]').first();
+  const hasSearchForm = await searchForm.count().catch(() => 0);
+
+  if (hasSearchForm === 0 || await searchInput.count().catch(() => 0) === 0) {
+    throw new Error('[Bic] ホームの検索フォームが見つかりませんでした');
   }
 
-  return page.goto(searchUrl, {
-    waitUntil: 'domcontentloaded',
-    timeout: timeoutMs,
-  });
+  const submitButton = searchForm.locator('button[type="submit"], input[type="submit"], .searchBtn, .bcs_searchBtn').first();
+
+  await searchInput.scrollIntoViewIfNeeded().catch(() => undefined);
+  await page.waitForTimeout(400).catch(() => undefined);
+  await searchInput.click({ timeout: 5000 }).catch(() => undefined);
+  await page.waitForTimeout(150).catch(() => undefined);
+  await searchInput.fill('').catch(() => undefined);
+  await page.waitForTimeout(150).catch(() => undefined);
+  await searchInput.pressSequentially(query, { delay: 90 }).catch(() => undefined);
+  await page.waitForTimeout(350).catch(() => undefined);
+
+  const [response] = await Promise.all([
+    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: paramsSafeTimeout(timeoutMs) }).catch(() => null),
+    (async () => {
+      if (await submitButton.count().catch(() => 0)) {
+        await submitButton.click({ timeout: 5000 }).catch(() => undefined);
+        return;
+      }
+
+      await searchInput.press('Enter').catch(() => undefined);
+    })(),
+  ]);
+
+  if (response !== null || isBicSearchResultUrl(page.url())) {
+    return response;
+  }
+
+  throw new Error('[Bic] ホーム検索フォーム送信後に検索結果ページへ遷移しませんでした');
 }
 
 function paramsSafeTimeout(timeoutMs: number): number {
   return Math.max(1000, timeoutMs);
+}
+
+function isBicSearchResultUrl(url: string): boolean {
+  return url.includes('/bc/category/');
 }
 
 async function primeBicPage(page: Page): Promise<void> {

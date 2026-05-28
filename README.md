@@ -195,11 +195,44 @@ BIC_BROWSER_CHANNEL=chrome HEADLESS=false npm run market:bic-search
 BIC_DISABLE_HTTP2=true HEADLESS=false npm run market:bic-search
 ```
 
+既に起動している system Chrome へ CDP 接続して、Playwright にブラウザを起動させない運用もできます。
+
+```bash
+google-chrome --remote-debugging-port=9222 --user-data-dir="$PWD/.playwright/profiles/bic-cdp" --new-window about:blank
+```
+
+```bash
+BIC_CONNECT_OVER_CDP_URL=http://127.0.0.1:9222 npm run market:bic-search
+```
+
 補足
 
 - `BIC_BROWSER_CHANNEL=chrome` は Playwright の `channel: 'chrome'` を使い、system Chrome に近い実行モードを試すためのものです
 - `BIC_DISABLE_HTTP2=true` は `--disable-http2` を付け、`net::ERR_HTTP2_PROTOCOL_ERROR` の切り分けを行うためのものです
+- `BIC_CONNECT_OVER_CDP_URL` を使うと既存 Chrome session に接続するため、Playwright 管理起動時より通常ブラウザに近い navigator 状態での実行を試せます
 - いずれも bot 検知回避のためではなく、通常ブラウザ利用に近い正攻法の範囲で実取得成功率を確認するための option です
+
+### Bic homepage probe
+
+通る PC と通らない PC の差分を比較するため、Bic トップページの到達結果を JSON / HTML / PNG で保存する probe script を追加しています。
+
+```bash
+HEADLESS=false BIC_BROWSER_CHANNEL=chrome npm run bic:probe-home
+```
+
+fresh profile で切り分けたい場合:
+
+```bash
+HEADLESS=false BIC_BROWSER_CHANNEL=chrome npm run bic:probe-home -- --fresh
+```
+
+補足
+
+- 既定では persistent context で起動し、profile は `.playwright/profiles/bic-research/` を使います
+- `--fresh` を付けるとその場限りの context で起動します
+- `result.json` に DNS lookup、proxy 環境変数、response headers、Cookie 名、navigator 情報、HTTP status を保存します
+- 既定の保存先は `playwright-artifacts/bic-home-probe/<timestamp>/` です
+- `--url`、`--timeout-ms`、`--pause-ms`、`--output-dir` で挙動を調整できます
 
 補足
 

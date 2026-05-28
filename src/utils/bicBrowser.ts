@@ -29,6 +29,11 @@ export function resolveBicBrowserChannel(): string | undefined {
   return value ? value : undefined;
 }
 
+export function resolveBicConnectOverCdpUrl(): string | undefined {
+  const value = process.env.BIC_CONNECT_OVER_CDP_URL?.trim();
+  return value ? value : undefined;
+}
+
 export function resolveBicDisableHttp2(): boolean {
   const rawValue = process.env.BIC_DISABLE_HTTP2;
   if (!rawValue) {

@@ -40,6 +40,7 @@ import {
   buildDefaultChromiumLaunchOptions,
   buildMarketContextOptions,
   resolveBicBrowserChannel,
+  resolveBicConnectOverCdpUrl,
   resolveBicDisableHttp2,
   resolveBicPersistentUserDataDir,
 } from './utils/bicBrowser';
@@ -340,10 +341,13 @@ async function runTargetOnce<T>(
 ): Promise<T> {
   let browser: Browser | null = null;
   const launchOptions = resolveLaunchOptionsForTarget(target, headless);
+  const bicCdpUrl = target === 'market-bic-search' ? resolveBicConnectOverCdpUrl() : undefined;
 
   const getBrowser = async (): Promise<Browser> => {
     if (!browser) {
-      browser = await chromium.launch(launchOptions);
+      browser = bicCdpUrl
+        ? await chromium.connectOverCDP(bicCdpUrl)
+        : await chromium.launch(launchOptions);
     }
 
     return browser;
@@ -474,6 +478,27 @@ async function createContextForTarget(
 ): Promise<BrowserContext> {
   if (target === 'market-bic-search') {
     logBicRuntimeSettings();
+    const cdpUrl = resolveBicConnectOverCdpUrl();
+
+    if (cdpUrl) {
+      const browser = await getBrowser();
+      const context = browser.contexts()[0];
+
+      if (!context) {
+        throw new Error(`[Bic] CDP 接続先に既存 context がありません: ${cdpUrl}`);
+      }
+
+      console.log(`[Bic] CDP 接続を使用: ${cdpUrl}`);
+
+      const originalClose = context.close.bind(context);
+      context.close = async () => {
+        await Promise.resolve();
+      };
+      void originalClose;
+
+      return context;
+    }
+
     const userDataDir = resolveBicPersistentUserDataDir();
     const marketConfig = options.marketConfig;
 
@@ -740,7 +765,12 @@ function resolveLaunchOptionsForTarget(target: ScrapeTarget, headless: boolean) 
 
 function logBicRuntimeSettings(): void {
   const channel = resolveBicBrowserChannel();
+  const cdpUrl = resolveBicConnectOverCdpUrl();
   const disableHttp2 = resolveBicDisableHttp2();
+
+  if (cdpUrl) {
+    console.log(`[Bic] CDP 接続先: ${cdpUrl}`);
+  }
 
   if (channel) {
     console.log(`[Bic] browser channel: ${channel}`);

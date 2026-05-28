@@ -38,6 +38,11 @@ export async function readMarketPageBodyText(page: Page): Promise<string> {
   }
 }
 
+export function isBrowserInternalErrorPage(url: string): boolean {
+  const normalized = url.trim().toLowerCase();
+  return normalized.startsWith('chrome-error://') || normalized.startsWith('about:neterror');
+}
+
 export function isLikelyBlocked(status: number | null, bodyText: string): boolean {
   if (status === 403 || status === 429) {
     return true;

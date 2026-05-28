@@ -17,6 +17,7 @@
     "market:bic-parse-html": "ts-node src/tools/parseBicSearchHtml.ts",
     "amazon:profile": "ts-node src/tools/amazonProfileSetup.ts",
     "bic:profile": "ts-node src/tools/bicProfileSetup.ts",
+    "bic:probe-home": "ts-node src/tools/bicHomeProbe.ts",
     "postinstall": "playwright install chromium"
   },
   "dependencies": {
