@@ -19,9 +19,11 @@ export function createMarketArtifactPaths(
   target: MarketResearchTarget,
   runAt: Date,
   artifactRootDir?: string,
+  artifactLabel?: string,
 ): MarketArtifactPaths {
   const resolvedRootDir = path.resolve(process.env.MARKET_ARTIFACT_DIR ?? artifactRootDir ?? './playwright-artifacts/market-research');
-  const artifactDir = path.join(resolvedRootDir, sanitizePathSegment(project), target, formatMarketTimestamp(runAt));
+  const runDir = path.join(resolvedRootDir, sanitizePathSegment(project), target, formatMarketTimestamp(runAt));
+  const artifactDir = artifactLabel ? path.join(runDir, sanitizePathSegment(artifactLabel)) : runDir;
 
   return {
     artifactDir,

@@ -8,9 +8,14 @@
   },
   "headless": true,
   "officialUrls": [
-    "https://example.com/"
+    "https://example.com/",
+    "https://example.com/nonexistent-market-product"
   ],
   "queries": {
+    "official": [
+      "example domain overview",
+      "missing example product page"
+    ],
     "amazon": [
       "sample query"
     ],

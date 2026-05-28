@@ -71,12 +71,19 @@ export function resolveMarketHeadless(config: MarketResearchConfig, defaultHeadl
 }
 
 export function resolveMarketPrimaryUrl(config: MarketResearchProjectConfig): string {
-  const url = config.officialUrls?.find((entry) => entry.trim().length > 0);
-  if (!url) {
+  return resolveMarketOfficialUrls(config)[0];
+}
+
+export function resolveMarketOfficialUrls(config: MarketResearchProjectConfig): string[] {
+  const urls = config.officialUrls
+    ?.map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0) ?? [];
+
+  if (urls.length === 0) {
     throw new Error('[market-config] officialUrls に少なくとも1件のURLを設定してください');
   }
 
-  return url;
+  return urls;
 }
 
 export function resolveFirstMarketQuery(config: MarketResearchProjectConfig): string | null {

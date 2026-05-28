@@ -56,6 +56,7 @@ npm run ark:memory
 npm run ark:ssd
 npm run ark:all
 npm run market:smoke
+npm run market:official-site
 ```
 
 ## Market Research 基盤
@@ -64,7 +65,7 @@ npm run market:smoke
 
 補足
 
-- 今回の実装は `market-smoke` のみです
+- 今回の実装は `market-smoke` と `market-official-site` です
 - `market-*` は疎通確認や後続実装向けの土台であり、引数なし実行には含めません
 - 既存の `amazon` ターゲットは従来どおり特定マーチャント一覧取得用です
 
@@ -88,6 +89,29 @@ MARKET_RESEARCH_CONFIG_PATH=configs/market/sample.json npx ts-node src/main.ts m
 npm run market:smoke
 ```
 
+### market-official-site 実行方法
+
+`officialUrls` に並べた公式商品ページやブランドページを直接巡回します。
+
+```bash
+npx ts-node src/main.ts market-official-site --config configs/market/sample.json
+```
+
+```bash
+MARKET_RESEARCH_CONFIG_PATH=configs/market/sample.json npx ts-node src/main.ts market-official-site
+```
+
+```bash
+npm run market:official-site
+```
+
+補足
+
+- `queries.official` は任意です
+- `officialUrls` が空の場合は config エラーで停止します
+- 404 / blocked / error でも URL ごとの証跡と JSONL / CSV record を残します
+- CAPTCHA や bot 検知を強引に突破する実装は行いません
+
 ### config 形式
 
 初期実装は JSON のみ対応です。
@@ -103,9 +127,11 @@ npm run market:smoke
 	},
 	"headless": true,
 	"officialUrls": [
-		"https://example.com/"
+		"https://example.com/",
+		"https://example.com/nonexistent-market-product"
 	],
 	"queries": {
+		"official": ["example domain overview", "missing example product page"],
 		"amazon": ["sample query"],
 		"bic": ["sample query"],
 		"youtube": ["sample query"]
@@ -117,6 +143,19 @@ npm run market:smoke
 ```
 
 サンプル設定は `configs/market/sample.json` にあります。
+
+Nicoh Coffee で使う場合の例:
+
+```json
+{
+	"officialUrls": [
+		"https://nicohcoffee.com/products/nk-h01",
+		"https://nicohcoffee.com/products/nk-h01a",
+		"https://nicohcoffee.com/products/nk-h02",
+		"https://nicohcoffee.com/collections/all"
+	]
+}
+```
 
 ### 出力先
 
@@ -132,6 +171,12 @@ npm run market:smoke
 playwright-artifacts/market-research/<project>/<target>/<timestamp>/
 ```
 
+`market-official-site` は URL ごとのサブディレクトリを切ります。
+
+```text
+playwright-artifacts/market-research/<project>/market-official-site/<timestamp>/<url-slug>/
+```
+
 保存内容
 
 - `metadata.json`
@@ -140,6 +185,7 @@ playwright-artifacts/market-research/<project>/<target>/<timestamp>/
 - エラー時: `error-metadata.json`
 - エラー時: `error.html`
 - エラー時: `error.png`
+- 404 / blocked も証跡を保存します
 
 ### Playwright profile / storage state の扱い
 
