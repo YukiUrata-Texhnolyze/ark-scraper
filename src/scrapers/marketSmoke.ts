@@ -15,6 +15,12 @@ import {
   toMarketArtifactErrorInfo,
 } from '../utils/marketArtifacts';
 import {
+  buildMarketArtifactMetadata,
+  isLikelyBlocked,
+  isLikelyBlockedByError,
+  readMarketPageBodyText,
+} from '../utils/marketPage';
+import {
   createMarketOutputPaths,
   getMarketOutputFiles,
   normalizeMarketOutputFormats,
@@ -58,9 +64,9 @@ export async function scrapeMarketSmoke(
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
     finalUrl = page.url() || url;
 
-    const bodyText = await readBodyText(page);
+    const bodyText = await readMarketPageBodyText(page);
     const blocked = isLikelyBlocked(response?.status() ?? null, bodyText);
-    const metadata = buildMetadata({
+    const metadata = buildMarketArtifactMetadata({
       config,
       target,
       query,
@@ -86,9 +92,9 @@ export async function scrapeMarketSmoke(
   } catch (error) {
     finalUrl = page.url() || finalUrl;
 
-    const bodyText = await readBodyText(page);
+    const bodyText = await readMarketPageBodyText(page);
     const blocked = isLikelyBlocked(null, bodyText) || isLikelyBlockedByError(error);
-    const metadata = buildMetadata({
+    const metadata = buildMarketArtifactMetadata({
       config,
       target,
       query,
@@ -107,35 +113,6 @@ export async function scrapeMarketSmoke(
   } finally {
     await page.close().catch(() => undefined);
   }
-}
-
-function buildMetadata(params: {
-  config: MarketResearchConfig;
-  target: MarketResearchTarget;
-  query: string | null;
-  url: string;
-  finalUrl: string;
-  crawledAt: string;
-  headless: boolean;
-  blocked: boolean;
-  error?: MarketArtifactMetadata['error'];
-}): MarketArtifactMetadata {
-  return {
-    project: params.config.project,
-    target: params.target,
-    query: params.query,
-    url: params.url,
-    finalUrl: params.finalUrl,
-    crawledAt: params.crawledAt,
-    locale: params.config.locale,
-    timezone: params.config.timezone,
-    viewport: params.config.viewport,
-    headless: params.headless,
-    loginStateLabel: params.config.loginStateLabel ?? 'anonymous',
-    profileName: params.config.profileName ?? null,
-    blocked: params.blocked,
-    error: params.error ?? null,
-  };
 }
 
 function buildOutputRecord(metadata: MarketArtifactMetadata): Record<string, unknown> {
@@ -158,39 +135,4 @@ function buildOutputRecord(metadata: MarketArtifactMetadata): Record<string, unk
     errorStack: metadata.error?.stack ?? '',
     error: metadata.error,
   };
-}
-
-async function readBodyText(page: import('playwright').Page): Promise<string> {
-  try {
-    return (await page.textContent('body')) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-function isLikelyBlocked(status: number | null, bodyText: string): boolean {
-  if (status === 403 || status === 429) {
-    return true;
-  }
-
-  const normalized = bodyText.toLowerCase();
-  return [
-    'captcha',
-    'not a robot',
-    'access denied',
-    'verify you are human',
-    'robot',
-    'blocked',
-  ].some((pattern) => normalized.includes(pattern));
-}
-
-function isLikelyBlockedByError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  return [
-    'captcha',
-    'access denied',
-    'blocked',
-    '403',
-    '429',
-  ].some((pattern) => message.includes(pattern));
 }

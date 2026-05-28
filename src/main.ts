@@ -14,6 +14,8 @@
  *   npx ts-node src/main.ts wd       # WDのみ
  *   npx ts-node src/main.ts ark-memory # Ark メモリのみ
  *   npx ts-node src/main.ts ark-ssd    # Ark SSDのみ
+ *   npx ts-node src/main.ts market-smoke # Market smoke のみ
+ *   npx ts-node src/main.ts market-official-site # 公式サイト巡回のみ
  */
 
 import 'dotenv/config';
@@ -21,6 +23,7 @@ import { chromium, Browser, BrowserContext } from 'playwright';
 import { loadMarketResearchConfig, resolveMarketHeadless } from './config/marketResearchConfig';
 import { scrapeArkMemory } from './scrapers/arkMemory';
 import { scrapeArkSsd } from './scrapers/arkSsd';
+import { scrapeMarketOfficialSite } from './scrapers/marketOfficialSite';
 import { scrapeMarketSmoke } from './scrapers/marketSmoke';
 import { scrapeRakuten } from './scrapers/rakuten';
 import { scrapeAmazon } from './scrapers/amazon';
@@ -41,7 +44,7 @@ import fs from 'fs';
 import path from 'path';
 
 type ExistingScrapeTarget = 'tek' | 'pside' | 'amazon' | 'wd' | 'ark-memory' | 'ark-ssd';
-type MarketScrapeTarget = 'market-smoke';
+type MarketScrapeTarget = 'market-smoke' | 'market-official-site';
 type ScrapeTarget = ExistingScrapeTarget | MarketScrapeTarget;
 
 interface CliOptions {
@@ -160,6 +163,26 @@ async function main(): Promise<void> {
           marketHeadless,
           async (context) => {
             await scrapeMarketSmoke(context, marketConfigBundle.config, {
+              headless: marketHeadless,
+            });
+          },
+          { marketConfig: marketConfigBundle.config },
+        );
+        continue;
+      }
+
+      if (target === 'market-official-site') {
+        if (!marketConfigBundle) {
+          throw new Error('market-official-site 実行には market config が必要です');
+        }
+
+        const marketHeadless = resolveMarketHeadless(marketConfigBundle.config, headless);
+        console.log(`[Market] config 読み込み: ${marketConfigBundle.configPath}`);
+        await runTargetOnce(
+          target,
+          marketHeadless,
+          async (context) => {
+            await scrapeMarketOfficialSite(context, marketConfigBundle.config, {
               headless: marketHeadless,
             });
           },
@@ -462,7 +485,7 @@ async function createContextForTarget(
 function getCliOptions(): CliOptions {
   const args = process.argv.slice(2);
   const targets: ScrapeTarget[] = [];
-  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke'];
+  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke', 'market-official-site'];
   const defaultTargets: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd'];
   let marketConfigPath: string | undefined;
 
@@ -631,7 +654,7 @@ function isArkTarget(target: ScrapeTarget): boolean {
 }
 
 function isMarketTarget(target: ScrapeTarget): target is MarketScrapeTarget {
-  return target === 'market-smoke';
+  return target === 'market-smoke' || target === 'market-official-site';
 }
 
 main();
