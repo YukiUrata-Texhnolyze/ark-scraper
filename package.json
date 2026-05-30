@@ -14,6 +14,7 @@
     "market:official-site": "ts-node src/main.ts market-official-site --config configs/market/sample.json",
     "market:amazon-search": "ts-node src/main.ts market-amazon-search --config configs/market/sample.json",
     "market:bic-search": "ts-node src/main.ts market-bic-search --config configs/market/sample.json",
+    "market:bic-search-browsermcp": "ts-node src/main.ts market-bic-search-browsermcp --config configs/market/sample.json",
     "market:bic-parse-html": "ts-node src/tools/parseBicSearchHtml.ts",
     "amazon:profile": "ts-node src/tools/amazonProfileSetup.ts",
     "bic:profile": "ts-node src/tools/bicProfileSetup.ts",

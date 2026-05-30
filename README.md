@@ -161,6 +161,21 @@ MARKET_RESEARCH_CONFIG_PATH=configs/market/sample.json npx ts-node src/main.ts m
 npm run market:bic-search
 ```
 
+browsermcp 用の切り出し骨格ターゲット:
+
+```bash
+npm run market:bic-search-browsermcp
+```
+
+`market-bic-search-browsermcp` は定期実行用スクレイパーではありません。通常の `market-bic-search` で安全に扱えない状況に限って、人の明示的な指示の下で BrowserMCP を使う manual / operator-assisted 経路として扱います。
+
+補足
+
+- 現状の `market-bic-search-browsermcp` は query plan の CSV / JSONL を出力する skeleton です
+- 実際のブラウザ操作は AI agent が MCP 経由で BrowserMCP tool を使って進める前提です
+- Akamai challenge や block を無人で突破する目的の定期実行には使いません
+- 通常の定期実行は引き続き `market-bic-search` を使います
+
 ### Bic profile setup
 
 ビックカメラ用に human-in-the-loop の永続プロファイル setup script を追加しています。Cookie 同意、確認画面、CAPTCHA が出た場合はブラウザ上で人手対応し、その状態を local profile へ保存します。
@@ -210,6 +225,7 @@ BIC_CONNECT_OVER_CDP_URL=http://127.0.0.1:9222 npm run market:bic-search
 - `BIC_BROWSER_CHANNEL=chrome` は Playwright の `channel: 'chrome'` を使い、system Chrome に近い実行モードを試すためのものです
 - `BIC_DISABLE_HTTP2=true` は `--disable-http2` を付け、`net::ERR_HTTP2_PROTOCOL_ERROR` の切り分けを行うためのものです
 - `BIC_CONNECT_OVER_CDP_URL` を使うと既存 Chrome session に接続するため、Playwright 管理起動時より通常ブラウザに近い navigator 状態での実行を試せます
+- 既定では Playwright の Chrome 起動に `--no-sandbox` を強制しません。sandbox を無効化しないと起動できない環境だけ `CHROMIUM_DISABLE_SANDBOX=true` を指定してください
 - いずれも bot 検知回避のためではなく、通常ブラウザ利用に近い正攻法の範囲で実取得成功率を確認するための option です
 
 ### Bic homepage probe
@@ -237,12 +253,12 @@ HEADLESS=false BIC_BROWSER_CHANNEL=chrome npm run bic:probe-home -- --fresh
 補足
 
 - `queries.bic` が空の場合は config エラーで停止します
-- query ごとに HTML / PNG / metadata を保存します
-- 掲載なしの場合も `no_results` record を 1 件残します
-- block / transport_error / error の場合も証跡と record を残します
+- `market-bic-search` は query ごとに HTML / PNG / metadata を保存します
+- 掲載なしの場合も `market-bic-search` は `no_results` record を 1 件残します
+- `market-bic-search` は block / transport_error / error の場合も証跡と record を残します
 - CAPTCHA や bot 検知を強引に突破する実装は行いません
 
-status の考え方:
+`market-bic-search` の status の考え方:
 
 - `ok`: 商品結果を取得できた
 - `no_results`: 検索結果が見つからない

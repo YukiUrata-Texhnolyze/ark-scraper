@@ -107,6 +107,7 @@ export type MarketResearchTarget =
   | 'market-official-site'
   | 'market-amazon-search'
   | 'market-bic-search'
+  | 'market-bic-search-browsermcp'
   | 'market-bic-parse-html'
   | 'market-amazon-product'
   | 'market-youtube-search'

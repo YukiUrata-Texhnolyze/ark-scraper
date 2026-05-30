@@ -18,6 +18,7 @@
  *   npx ts-node src/main.ts market-official-site # 公式サイト巡回のみ
  *   npx ts-node src/main.ts market-amazon-search # Amazon 検索のみ
  *   npx ts-node src/main.ts market-bic-search # BicCamera 検索のみ
+ *   npx ts-node src/main.ts market-bic-search-browsermcp # Bic browsermcp 手動 plan のみ
  */
 
 import 'dotenv/config';
@@ -27,6 +28,7 @@ import { scrapeArkMemory } from './scrapers/arkMemory';
 import { scrapeArkSsd } from './scrapers/arkSsd';
 import { scrapeMarketAmazonSearch } from './scrapers/marketAmazonSearch';
 import { scrapeMarketBicSearch } from './scrapers/marketBicSearch';
+import { scrapeMarketBicSearchBrowserMcp } from './scrapers/marketBicSearchBrowserMcp';
 import { scrapeMarketOfficialSite } from './scrapers/marketOfficialSite';
 import { scrapeMarketSmoke } from './scrapers/marketSmoke';
 import { scrapeRakuten } from './scrapers/rakuten';
@@ -58,7 +60,7 @@ import fs from 'fs';
 import path from 'path';
 
 type ExistingScrapeTarget = 'tek' | 'pside' | 'amazon' | 'wd' | 'ark-memory' | 'ark-ssd';
-type MarketScrapeTarget = 'market-smoke' | 'market-official-site' | 'market-amazon-search' | 'market-bic-search';
+type MarketScrapeTarget = 'market-smoke' | 'market-official-site' | 'market-amazon-search' | 'market-bic-search' | 'market-bic-search-browsermcp';
 type ScrapeTarget = ExistingScrapeTarget | MarketScrapeTarget;
 
 interface CliOptions {
@@ -242,6 +244,16 @@ async function main(): Promise<void> {
           },
           { marketConfig: marketConfigBundle.config },
         );
+        continue;
+      }
+
+      if (target === 'market-bic-search-browsermcp') {
+        if (!marketConfigBundle) {
+          throw new Error('market-bic-search-browsermcp 実行には market config が必要です');
+        }
+
+        console.log(`[Market] config 読み込み: ${marketConfigBundle.configPath}`);
+        await scrapeMarketBicSearchBrowserMcp(marketConfigBundle.config);
         continue;
       }
 
@@ -576,7 +588,7 @@ async function createContextForTarget(
 function getCliOptions(): CliOptions {
   const args = process.argv.slice(2);
   const targets: ScrapeTarget[] = [];
-  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke', 'market-official-site', 'market-amazon-search', 'market-bic-search'];
+  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke', 'market-official-site', 'market-amazon-search', 'market-bic-search', 'market-bic-search-browsermcp'];
   const defaultTargets: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd'];
   let marketConfigPath: string | undefined;
 
@@ -748,7 +760,8 @@ function isMarketTarget(target: ScrapeTarget): target is MarketScrapeTarget {
   return target === 'market-smoke'
     || target === 'market-official-site'
     || target === 'market-amazon-search'
-    || target === 'market-bic-search';
+    || target === 'market-bic-search'
+    || target === 'market-bic-search-browsermcp';
 }
 
 function usesAmazonPersistentProfile(target: ScrapeTarget): boolean {

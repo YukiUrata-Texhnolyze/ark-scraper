@@ -43,8 +43,21 @@ export function resolveBicDisableHttp2(): boolean {
   return !['0', 'false', 'no', 'off'].includes(rawValue.toLowerCase());
 }
 
+export function resolveChromiumDisableSandbox(): boolean {
+  const rawValue = process.env.CHROMIUM_DISABLE_SANDBOX;
+  if (!rawValue) {
+    return false;
+  }
+
+  return !['0', 'false', 'no', 'off'].includes(rawValue.toLowerCase());
+}
+
 export function buildBaseChromiumArgs(extraArgs: string[] = []): string[] {
-  const args = ['--no-sandbox', '--disable-setuid-sandbox'];
+  const args: string[] = [];
+
+  if (resolveChromiumDisableSandbox()) {
+    args.push('--no-sandbox', '--disable-setuid-sandbox');
+  }
 
   for (const arg of extraArgs) {
     if (!args.includes(arg)) {
