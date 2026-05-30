@@ -1,0 +1,49 @@
+{
+  "project": "nicoh-coffee",
+  "locale": "ja-JP",
+  "timezone": "Asia/Tokyo",
+  "viewport": {
+    "width": 1440,
+    "height": 1400
+  },
+  "officialUrls": [
+    "https://nicohcoffee.com/",
+    "https://nicohcoffee.com/collections/all",
+    "https://nicohcoffee.com/products/nk-h01",
+    "https://nicohcoffee.com/products/nk-h01a",
+    "https://nicohcoffee.com/products/nk-h02"
+  ],
+  "queries": {
+    "official": [
+      "brand top page",
+      "all products collection",
+      "NK-H01 product page",
+      "NK-H01A product page",
+      "NK-H02 product page"
+    ],
+    "amazon": [
+      "Nicoh Coffee",
+      "NK-H01",
+      "NK-H01A",
+      "ポータブル エスプレッソマシン",
+      "ポータブル コーヒーメーカー",
+      "電動 エスプレッソマシン ポータブル",
+      "OutIn Nano",
+      "Wacaco Nanopresso",
+      "STARESSO"
+    ],
+    "bic": [
+      "Nicoh Coffee",
+      "NK-H01",
+      "NK-H01A",
+      "ポータブル エスプレッソマシン",
+      "ポータブル コーヒーメーカー"
+    ]
+  },
+  "loginStateLabel": "anonymous",
+  "profileName": null,
+  "outputFormats": [
+    "csv",
+    "jsonl"
+  ]
+}
