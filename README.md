@@ -58,10 +58,11 @@ npm run ark:all
 npm run market:smoke
 npm run market:official-site
 npm run market:amazon-search
-npm run market:bic-search
+npm run market:bic-search-browsermcp
 npm run market:bic-parse-html
 npm run amazon:profile
 npm run bic:profile
+npm run bic:probe-home
 ```
 
 ## Market Research 基盤
@@ -70,7 +71,7 @@ npm run bic:profile
 
 補足
 
-- 今回の実装は `market-smoke`、`market-official-site`、`market-amazon-search`、`market-bic-search` です
+- 今回の実装は `market-smoke`、`market-official-site`、`market-amazon-search`、`market-bic-search-browsermcp` です
 - `market-*` は疎通確認や後続実装向けの土台であり、引数なし実行には含めません
 - 既存の `amazon` ターゲットは従来どおり特定マーチャント一覧取得用です
 
@@ -143,42 +144,41 @@ AMAZON_PERSISTENT_USER_DATA_DIR=.playwright/profiles/amazon-research npm run mar
 
 人間が通常ブラウザに近い headful セッションでログイン状態や配送先、確認画面を整え、その profile を `market-amazon-search` で再利用する想定です。CAPTCHA / bot detection を自動突破する実装は行いません。
 
-### market-bic-search 実行方法
+### BicCamera 方針
 
-`queries.bic` に並べた検索クエリをビックカメラ.com で巡回し、掲載有無、価格、ポイント還元、在庫表示を収集します。
+この repo では BicCamera を通常の Playwright スクレイピング target として扱いません。
 
-現在の検索 URL は `https://www.biccamera.com/bc/category/?q=<query>` です。サイト側で `preQ` や `sold_out_tp2` が付くことがあるため、最終遷移先 URL も record と証跡に残します。
+- Linux / WSL 実行では `ERR_HTTP2_PROTOCOL_ERROR` や Akamai block が継続しているため、定常取得・blind retry・通常 probe を前提にしません
+- Bic の実調査は BrowserMCP 接続済みブラウザタブを使う manual / operator-assisted 経路を正とします
+- repo に残す Bic tooling は BrowserMCP 用 query plan、保存 HTML parse、headful 診断用 probe に限定します
 
-```bash
-npx ts-node src/main.ts market-bic-search --config configs/market/sample.json
-```
+運用方針と棚卸しは [BICCAMERA_POLICY.md](BICCAMERA_POLICY.md) にまとめています。
 
-```bash
-MARKET_RESEARCH_CONFIG_PATH=configs/market/sample.json npx ts-node src/main.ts market-bic-search
-```
-
-```bash
-npm run market:bic-search
-```
-
-browsermcp 用の切り出し骨格ターゲット:
+### market-bic-search-browsermcp 実行方法
 
 ```bash
 npm run market:bic-search-browsermcp
 ```
 
-`market-bic-search-browsermcp` は定期実行用スクレイパーではありません。通常の `market-bic-search` で安全に扱えない状況に限って、人の明示的な指示の下で BrowserMCP を使う manual / operator-assisted 経路として扱います。
+`market-bic-search-browsermcp` は定期実行用スクレイパーではありません。通常の HTTP automation で安全に扱えない状況に限って、人の明示的な指示の下で BrowserMCP を使う manual / operator-assisted 経路として扱います。
 
 補足
 
 - 現状の `market-bic-search-browsermcp` は query plan の CSV / JSONL を出力する skeleton です
 - 実際のブラウザ操作は AI agent が MCP 経由で BrowserMCP tool を使って進める前提です
 - Akamai challenge や block を無人で突破する目的の定期実行には使いません
-- 通常の定期実行は引き続き `market-bic-search` を使います
+
+### Bic saved HTML parse
+
+保存済みの Bic 検索 HTML を offline で parse したい場合だけ使います。
+
+```bash
+npm run market:bic-parse-html -- --input /path/to/bic-search.html --query "ポータブル エスプレッソマシン"
+```
 
 ### Bic profile setup
 
-ビックカメラ用に human-in-the-loop の永続プロファイル setup script を追加しています。Cookie 同意、確認画面、CAPTCHA が出た場合はブラウザ上で人手対応し、その状態を local profile へ保存します。
+ビックカメラ用に human-in-the-loop の headful troubleshooting script を追加しています。Cookie 同意、確認画面、CAPTCHA が出た場合はブラウザ上で人手対応し、その状態を local profile へ保存します。
 
 ```bash
 BIC_PERSISTENT_USER_DATA_DIR=.playwright/profiles/bic-research HEADLESS=false npm run bic:profile
@@ -191,46 +191,30 @@ BIC_PERSISTENT_USER_DATA_DIR=.playwright/profiles/bic-research HEADLESS=false np
 - `HEADLESS=false` で通常ブラウザに近い headful 実行にします
 - ブラウザを閉じると profile が保存されます
 - `BIC_SETUP_AUTO_CLOSE_MS=5000` のように指定すると、手元検証用に自動終了できます
-
-保存した profile を `market-bic-search` で再利用する例:
-
-```bash
-BIC_PERSISTENT_USER_DATA_DIR=.playwright/profiles/bic-research HEADLESS=false npm run market:bic-search
-```
+- この script は定常スクレイピングの前提づくりではなく、人手診断専用です
 
 ### Bic browser mode / HTTP2 切り分け
 
-通常の Playwright Chromium に加えて、system Chrome に近い実行モードや HTTP/2 切り分け用の起動 option を指定できます。
+通常の Playwright Chromium に加えて、system Chrome に近い実行モードや HTTP/2 切り分け用の起動 option を、`bic:profile` と `bic:probe-home` の診断で指定できます。
 
 ```bash
-BIC_BROWSER_CHANNEL=chrome HEADLESS=false npm run market:bic-search
+BIC_BROWSER_CHANNEL=chrome HEADLESS=false npm run bic:probe-home -- --fresh
 ```
 
 ```bash
-BIC_DISABLE_HTTP2=true HEADLESS=false npm run market:bic-search
-```
-
-既に起動している system Chrome へ CDP 接続して、Playwright にブラウザを起動させない運用もできます。
-
-```bash
-google-chrome --remote-debugging-port=9222 --user-data-dir="$PWD/.playwright/profiles/bic-cdp" --new-window about:blank
-```
-
-```bash
-BIC_CONNECT_OVER_CDP_URL=http://127.0.0.1:9222 npm run market:bic-search
+BIC_DISABLE_HTTP2=true HEADLESS=false npm run bic:probe-home -- --fresh
 ```
 
 補足
 
 - `BIC_BROWSER_CHANNEL=chrome` は Playwright の `channel: 'chrome'` を使い、system Chrome に近い実行モードを試すためのものです
 - `BIC_DISABLE_HTTP2=true` は `--disable-http2` を付け、`net::ERR_HTTP2_PROTOCOL_ERROR` の切り分けを行うためのものです
-- `BIC_CONNECT_OVER_CDP_URL` を使うと既存 Chrome session に接続するため、Playwright 管理起動時より通常ブラウザに近い navigator 状態での実行を試せます
 - 既定では Playwright の Chrome 起動に `--no-sandbox` を強制しません。sandbox を無効化しないと起動できない環境だけ `CHROMIUM_DISABLE_SANDBOX=true` を指定してください
-- いずれも bot 検知回避のためではなく、通常ブラウザ利用に近い正攻法の範囲で実取得成功率を確認するための option です
+- いずれも bot 検知回避のためではなく、診断時に通常ブラウザ利用に近い条件で挙動を確認するための option です
 
 ### Bic homepage probe
 
-通る PC と通らない PC の差分を比較するため、Bic トップページの到達結果を JSON / HTML / PNG で保存する probe script を追加しています。
+通る PC と通らない PC の差分を比較するため、Bic トップページの到達結果を JSON / HTML / PNG で保存する diagnostic probe script を追加しています。
 
 ```bash
 HEADLESS=false BIC_BROWSER_CHANNEL=chrome npm run bic:probe-home
@@ -249,16 +233,13 @@ HEADLESS=false BIC_BROWSER_CHANNEL=chrome npm run bic:probe-home -- --fresh
 - `result.json` に DNS lookup、proxy 環境変数、response headers、Cookie 名、navigator 情報、HTTP status を保存します
 - 既定の保存先は `playwright-artifacts/bic-home-probe/<timestamp>/` です
 - `--url`、`--timeout-ms`、`--pause-ms`、`--output-dir` で挙動を調整できます
+- 定常調査や定期スクレイピングではなく、環境差分の診断専用です
 
 補足
 
-- `queries.bic` が空の場合は config エラーで停止します
-- `market-bic-search` は query ごとに HTML / PNG / metadata を保存します
-- 掲載なしの場合も `market-bic-search` は `no_results` record を 1 件残します
-- `market-bic-search` は block / transport_error / error の場合も証跡と record を残します
 - CAPTCHA や bot 検知を強引に突破する実装は行いません
 
-`market-bic-search` の status の考え方:
+legacy Bic record / offline parse で使う status の考え方:
 
 - `ok`: 商品結果を取得できた
 - `no_results`: 検索結果が見つからない
@@ -376,12 +357,6 @@ playwright-artifacts/market-research/<project>/market-official-site/<timestamp>/
 playwright-artifacts/market-research/<project>/market-amazon-search/<timestamp>/<query-slug>/
 ```
 
-`market-bic-search` も query ごとのサブディレクトリを切ります。
-
-```text
-playwright-artifacts/market-research/<project>/market-bic-search/<timestamp>/<query-slug>/
-```
-
 保存内容
 
 - `metadata.json`
@@ -398,8 +373,8 @@ playwright-artifacts/market-research/<project>/market-bic-search/<timestamp>/<qu
 - `.playwright/profiles/`、storage state、Cookie、ログイン情報、2FA 情報は Git に含めないでください
 - market 系ターゲットでも CAPTCHA や bot 検知を強引に突破する実装は行いません
 - `market-amazon-search` も CAPTCHA / bot detection の bypass は行わず、block 時は証跡を保存して終了します
-- `market-bic-search` も CAPTCHA / bot detection の bypass は行わず、block / transport_error / no_results 時も証跡を保存して終了します
-- Bic / Amazon の profile setup は human-in-the-loop 運用です。人間が通常ブラウザ上で確認画面を処理し、その profile を検索 target へ再利用します
+- Bic の live 調査は BrowserMCP 接続済みタブを前提とし、Playwright の通常検索 target としては公開しません
+- Bic / Amazon の profile setup は human-in-the-loop 運用です。Amazon は検索 target へ再利用できますが、Bic は診断専用です
 - `BIC_PERSISTENT_USER_DATA_DIR` や `AMAZON_PERSISTENT_USER_DATA_DIR` の保存先が Git 管理対象に入らないよう注意してください
 
 ## WSL 自動定期実行
