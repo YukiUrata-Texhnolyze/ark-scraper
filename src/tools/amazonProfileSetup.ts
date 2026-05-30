@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { chromium } from 'playwright';
+import { buildDefaultChromiumLaunchOptions } from '../utils/bicBrowser';
 
 const MARKETPLACE_ID = 'A1VC38T7YXB528';
 const MERCHANT_ID = process.env.AMAZON_MERCHANT_ID ?? 'A290QSZB4BCGSX';
@@ -12,8 +13,7 @@ async function main(): Promise<void> {
   const autoCloseMs = Number(process.env.AMAZON_SETUP_AUTO_CLOSE_MS ?? '0');
 
   const context = await chromium.launchPersistentContext(userDataDir, {
-    headless,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    ...buildDefaultChromiumLaunchOptions(headless),
     locale: 'ja-JP',
     timezoneId: 'Asia/Tokyo',
     viewport: { width: 1920, height: 1080 },

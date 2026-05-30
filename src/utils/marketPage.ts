@@ -38,6 +38,11 @@ export async function readMarketPageBodyText(page: Page): Promise<string> {
   }
 }
 
+export function isBrowserInternalErrorPage(url: string): boolean {
+  const normalized = url.trim().toLowerCase();
+  return normalized.startsWith('chrome-error://') || normalized.startsWith('about:neterror');
+}
+
 export function isLikelyBlocked(status: number | null, bodyText: string): boolean {
   if (status === 403 || status === 429) {
     return true;
@@ -62,5 +67,23 @@ export function isLikelyBlockedByError(error: unknown): boolean {
     'blocked',
     '403',
     '429',
+  ].some((pattern) => message.includes(pattern));
+}
+
+export function isLikelyTransportError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return [
+    'err_http2_protocol_error',
+    'net::err_',
+    'tls',
+    'ssl',
+    'certificate',
+    'econnreset',
+    'connection reset',
+    'connection refused',
+    'connection closed',
+    'socket hang up',
+    'name not resolved',
+    'internet disconnected',
   ].some((pattern) => message.includes(pattern));
 }

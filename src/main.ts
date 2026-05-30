@@ -18,6 +18,7 @@
  *   npx ts-node src/main.ts market-official-site # 公式サイト巡回のみ
  *   npx ts-node src/main.ts market-amazon-search # Amazon 検索のみ
  *   npx ts-node src/main.ts market-bic-search # BicCamera 検索のみ
+ *   npx ts-node src/main.ts market-bic-search-browsermcp # Bic browsermcp 手動 plan のみ
  */
 
 import 'dotenv/config';
@@ -27,6 +28,7 @@ import { scrapeArkMemory } from './scrapers/arkMemory';
 import { scrapeArkSsd } from './scrapers/arkSsd';
 import { scrapeMarketAmazonSearch } from './scrapers/marketAmazonSearch';
 import { scrapeMarketBicSearch } from './scrapers/marketBicSearch';
+import { scrapeMarketBicSearchBrowserMcp } from './scrapers/marketBicSearchBrowserMcp';
 import { scrapeMarketOfficialSite } from './scrapers/marketOfficialSite';
 import { scrapeMarketSmoke } from './scrapers/marketSmoke';
 import { scrapeRakuten } from './scrapers/rakuten';
@@ -34,6 +36,16 @@ import { scrapeAmazon } from './scrapers/amazon';
 import { scrapeWD } from './scrapers/wd';
 import { sendErrorEmail } from './utils/mailer';
 import { DEFAULT_ARK_USER_AGENT, parseUrlList } from './utils/arkHelpers';
+import {
+  buildBicLaunchOptions,
+  buildBicPersistentContextOptions,
+  buildDefaultChromiumLaunchOptions,
+  buildMarketContextOptions,
+  resolveBicBrowserChannel,
+  resolveBicConnectOverCdpUrl,
+  resolveBicDisableHttp2,
+  resolveBicPersistentUserDataDir,
+} from './utils/bicBrowser';
 import { isSharePointUploadConfigured, uploadFilesToSharePointIfConfigured } from './utils/sharepoint';
 import { uploadFilesToR2IfConfigured, R2UploadFile } from './utils/storageUpload';
 import {
@@ -48,7 +60,7 @@ import fs from 'fs';
 import path from 'path';
 
 type ExistingScrapeTarget = 'tek' | 'pside' | 'amazon' | 'wd' | 'ark-memory' | 'ark-ssd';
-type MarketScrapeTarget = 'market-smoke' | 'market-official-site' | 'market-amazon-search' | 'market-bic-search';
+type MarketScrapeTarget = 'market-smoke' | 'market-official-site' | 'market-amazon-search' | 'market-bic-search' | 'market-bic-search-browsermcp';
 type ScrapeTarget = ExistingScrapeTarget | MarketScrapeTarget;
 
 interface CliOptions {
@@ -235,6 +247,16 @@ async function main(): Promise<void> {
         continue;
       }
 
+      if (target === 'market-bic-search-browsermcp') {
+        if (!marketConfigBundle) {
+          throw new Error('market-bic-search-browsermcp 実行には market config が必要です');
+        }
+
+        console.log(`[Market] config 読み込み: ${marketConfigBundle.configPath}`);
+        await scrapeMarketBicSearchBrowserMcp(marketConfigBundle.config);
+        continue;
+      }
+
       if (target === 'ark-memory') {
         const config = createArkMemoryConfig(headless);
         await runTargetOnce(target, headless, async (context) => {
@@ -330,13 +352,14 @@ async function runTargetOnce<T>(
   options: TargetRunOptions = {},
 ): Promise<T> {
   let browser: Browser | null = null;
+  const launchOptions = resolveLaunchOptionsForTarget(target, headless);
+  const bicCdpUrl = target === 'market-bic-search' ? resolveBicConnectOverCdpUrl() : undefined;
 
   const getBrowser = async (): Promise<Browser> => {
     if (!browser) {
-      browser = await chromium.launch({
-        headless,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
+      browser = bicCdpUrl
+        ? await chromium.connectOverCDP(bicCdpUrl)
+        : await chromium.launch(launchOptions);
     }
 
     return browser;
@@ -465,6 +488,45 @@ async function createContextForTarget(
   getBrowser: () => Promise<Browser>,
   options: TargetRunOptions = {},
 ): Promise<BrowserContext> {
+  if (target === 'market-bic-search') {
+    logBicRuntimeSettings();
+    const cdpUrl = resolveBicConnectOverCdpUrl();
+
+    if (cdpUrl) {
+      const browser = await getBrowser();
+      const context = browser.contexts()[0];
+
+      if (!context) {
+        throw new Error(`[Bic] CDP 接続先に既存 context がありません: ${cdpUrl}`);
+      }
+
+      console.log(`[Bic] CDP 接続を使用: ${cdpUrl}`);
+
+      const originalClose = context.close.bind(context);
+      context.close = async () => {
+        await Promise.resolve();
+      };
+      void originalClose;
+
+      return context;
+    }
+
+    const userDataDir = resolveBicPersistentUserDataDir();
+    const marketConfig = options.marketConfig;
+
+    if (userDataDir) {
+      if (!marketConfig) {
+        throw new Error(`${target} 実行には market config が必要です`);
+      }
+
+      console.log(`[Bic] 永続プロファイルを使用: ${userDataDir}`);
+      return chromium.launchPersistentContext(
+        userDataDir,
+        buildBicPersistentContextOptions(headless, marketConfig),
+      );
+    }
+  }
+
   if (usesAmazonPersistentProfile(target)) {
     const userDataDir = process.env.AMAZON_PERSISTENT_USER_DATA_DIR;
     if (userDataDir) {
@@ -473,8 +535,7 @@ async function createContextForTarget(
       const timezoneId = options.marketConfig?.timezone ?? 'Asia/Tokyo';
       const viewport = options.marketConfig?.viewport ?? { width: 1920, height: 1080 };
       return chromium.launchPersistentContext(userDataDir, {
-        headless,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        ...buildDefaultChromiumLaunchOptions(headless),
         locale,
         timezoneId,
         viewport,
@@ -490,12 +551,7 @@ async function createContextForTarget(
     }
 
     const browser = await getBrowser();
-    return browser.newContext({
-      locale: marketConfig.locale,
-      timezoneId: marketConfig.timezone,
-      viewport: marketConfig.viewport,
-      colorScheme: 'light',
-    });
+    return browser.newContext(buildMarketContextOptions(marketConfig));
   }
 
   if (isArkTarget(target)) {
@@ -532,7 +588,7 @@ async function createContextForTarget(
 function getCliOptions(): CliOptions {
   const args = process.argv.slice(2);
   const targets: ScrapeTarget[] = [];
-  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke', 'market-official-site', 'market-amazon-search', 'market-bic-search'];
+  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke', 'market-official-site', 'market-amazon-search', 'market-bic-search', 'market-bic-search-browsermcp'];
   const defaultTargets: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd'];
   let marketConfigPath: string | undefined;
 
@@ -704,11 +760,38 @@ function isMarketTarget(target: ScrapeTarget): target is MarketScrapeTarget {
   return target === 'market-smoke'
     || target === 'market-official-site'
     || target === 'market-amazon-search'
-    || target === 'market-bic-search';
+    || target === 'market-bic-search'
+    || target === 'market-bic-search-browsermcp';
 }
 
 function usesAmazonPersistentProfile(target: ScrapeTarget): boolean {
   return target === 'amazon' || target === 'market-amazon-search';
+}
+
+function resolveLaunchOptionsForTarget(target: ScrapeTarget, headless: boolean) {
+  if (target === 'market-bic-search') {
+    return buildBicLaunchOptions(headless);
+  }
+
+  return buildDefaultChromiumLaunchOptions(headless);
+}
+
+function logBicRuntimeSettings(): void {
+  const channel = resolveBicBrowserChannel();
+  const cdpUrl = resolveBicConnectOverCdpUrl();
+  const disableHttp2 = resolveBicDisableHttp2();
+
+  if (cdpUrl) {
+    console.log(`[Bic] CDP 接続先: ${cdpUrl}`);
+  }
+
+  if (channel) {
+    console.log(`[Bic] browser channel: ${channel}`);
+  }
+
+  if (disableHttp2) {
+    console.log('[Bic] launch arg: --disable-http2');
+  }
 }
 
 main();
