@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import { DEFAULT_RETENTION_KEEP_COUNT, pruneTimestampedFilesBySegment } from './retention';
 
 export class CsvManager {
   private filePath: string;
@@ -67,6 +68,7 @@ export class CsvManager {
 
     await fs.promises.writeFile(this.filePath, `\uFEFF${csvText}`, 'utf8');
     console.log(`[CSV] 保存完了: ${this.filePath}`);
+    await pruneTimestampedFilesBySegment(path.dirname(this.filePath), DEFAULT_RETENTION_KEEP_COUNT);
   }
 
   getFilePath(): string {

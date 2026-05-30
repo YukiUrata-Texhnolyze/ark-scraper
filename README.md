@@ -18,6 +18,12 @@ Power Automate Desktop で運用していた ark 用スクレイパーを Playwr
 - 一部ターゲットは途中保存に対応
 - ファイル名は実行時刻ベースで共通化される
 
+生成データの保持方針
+
+- `output/` と `playwright-artifacts/` は git 管理外です
+- timestamp 付き run はセグメントごとに直近 3 件だけ自動保持します
+- 対象には通常 CSV、market 系 CSV / JSONL / 証跡、`ark-*` 証跡、`bic-home-probe`、SharePoint staging を含みます
+
 例
 
 - `ama_2026-03-25_21-01-49.csv`

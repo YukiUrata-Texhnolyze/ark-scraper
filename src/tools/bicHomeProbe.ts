@@ -15,6 +15,7 @@ import {
   resolveBicPersistentUserDataDir,
 } from '../utils/bicBrowser';
 import { formatMarketTimestamp } from '../utils/marketOutput';
+import { DEFAULT_RETENTION_KEEP_COUNT, pruneTimestampedChildDirectories } from '../utils/retention';
 
 interface CliOptions {
   url: string;
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
     : null;
 
   await fs.promises.mkdir(artifactDir, { recursive: true });
+  await pruneTimestampedChildDirectories(path.dirname(artifactDir), DEFAULT_RETENTION_KEEP_COUNT);
 
   const probeUrl = new URL(options.url);
   const dnsInfo = await collectDnsInfo(probeUrl.hostname);

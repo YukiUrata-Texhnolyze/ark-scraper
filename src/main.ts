@@ -38,6 +38,7 @@ import {
   buildDefaultChromiumLaunchOptions,
   buildMarketContextOptions,
 } from './utils/bicBrowser';
+import { DEFAULT_RETENTION_KEEP_COUNT, pruneTimestampedChildDirectories } from './utils/retention';
 import { isSharePointUploadConfigured, uploadFilesToSharePointIfConfigured } from './utils/sharepoint';
 import { uploadFilesToR2IfConfigured, R2UploadFile } from './utils/storageUpload';
 import {
@@ -396,6 +397,7 @@ async function stageSharePointFile(
 ): Promise<SharePointStagedFile> {
   const stagedPath = path.join(SHAREPOINT_STAGING_DIR, path.basename(sourcePath));
   await fs.promises.mkdir(SHAREPOINT_STAGING_DIR, { recursive: true });
+  await pruneTimestampedChildDirectories(path.dirname(SHAREPOINT_STAGING_DIR), DEFAULT_RETENTION_KEEP_COUNT);
   await fs.promises.copyFile(sourcePath, stagedPath);
 
   console.log(`[Output] SharePointステージング完了 (${target}): ${stagedPath}`);

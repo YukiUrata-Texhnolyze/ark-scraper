@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { Page } from 'playwright';
 import { ArkMemoryItem, ArkSsdItem } from '../types';
+import { DEFAULT_RETENTION_KEEP_COUNT, pruneTimestampedFilesBySegment } from './retention';
 
 export const DEFAULT_ARK_USER_AGENT =
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -111,6 +112,7 @@ export async function writeCsvRows(filePath: string, rows: Array<Array<unknown>>
 
   await fs.promises.writeFile(resolvedPath, `\uFEFF${body}${rows.length > 0 ? '\n' : ''}`, 'utf8');
   console.log(`[CSV] 保存完了: ${resolvedPath}`);
+  await pruneTimestampedFilesBySegment(path.dirname(resolvedPath), DEFAULT_RETENTION_KEEP_COUNT);
 }
 
 function csvEscape(value: unknown): string {
