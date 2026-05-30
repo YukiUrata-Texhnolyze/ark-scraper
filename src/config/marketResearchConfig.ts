@@ -71,12 +71,19 @@ export function resolveMarketHeadless(config: MarketResearchConfig, defaultHeadl
 }
 
 export function resolveMarketPrimaryUrl(config: MarketResearchProjectConfig): string {
-  const url = config.officialUrls?.find((entry) => entry.trim().length > 0);
-  if (!url) {
+  return resolveMarketOfficialUrls(config)[0];
+}
+
+export function resolveMarketOfficialUrls(config: MarketResearchProjectConfig): string[] {
+  const urls = config.officialUrls
+    ?.map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0) ?? [];
+
+  if (urls.length === 0) {
     throw new Error('[market-config] officialUrls に少なくとも1件のURLを設定してください');
   }
 
-  return url;
+  return urls;
 }
 
 export function resolveFirstMarketQuery(config: MarketResearchProjectConfig): string | null {
@@ -92,6 +99,30 @@ export function resolveFirstMarketQuery(config: MarketResearchProjectConfig): st
   }
 
   return null;
+}
+
+export function resolveMarketAmazonQueries(config: MarketResearchProjectConfig): string[] {
+  const queries = config.queries?.amazon
+    ?.map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0) ?? [];
+
+  if (queries.length === 0) {
+    throw new Error('[market-config] queries.amazon に少なくとも1件のクエリを設定してください');
+  }
+
+  return queries;
+}
+
+export function resolveMarketBicQueries(config: MarketResearchProjectConfig): string[] {
+  const queries = config.queries?.bic
+    ?.map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0) ?? [];
+
+  if (queries.length === 0) {
+    throw new Error('[market-config] queries.bic に少なくとも1件のクエリを設定してください');
+  }
+
+  return queries;
 }
 
 function normalizeMarketResearchConfig(value: unknown, resolvedPath: string): MarketResearchConfig {

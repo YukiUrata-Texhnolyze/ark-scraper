@@ -14,6 +14,10 @@
  *   npx ts-node src/main.ts wd       # WDのみ
  *   npx ts-node src/main.ts ark-memory # Ark メモリのみ
  *   npx ts-node src/main.ts ark-ssd    # Ark SSDのみ
+ *   npx ts-node src/main.ts market-smoke # Market smoke のみ
+ *   npx ts-node src/main.ts market-official-site # 公式サイト巡回のみ
+ *   npx ts-node src/main.ts market-amazon-search # Amazon 検索のみ
+ *   npx ts-node src/main.ts market-bic-search-browsermcp # Bic browsermcp 手動 plan のみ
  */
 
 import 'dotenv/config';
@@ -21,12 +25,20 @@ import { chromium, Browser, BrowserContext } from 'playwright';
 import { loadMarketResearchConfig, resolveMarketHeadless } from './config/marketResearchConfig';
 import { scrapeArkMemory } from './scrapers/arkMemory';
 import { scrapeArkSsd } from './scrapers/arkSsd';
+import { scrapeMarketAmazonSearch } from './scrapers/marketAmazonSearch';
+import { scrapeMarketBicSearchBrowserMcp } from './scrapers/marketBicSearchBrowserMcp';
+import { scrapeMarketOfficialSite } from './scrapers/marketOfficialSite';
 import { scrapeMarketSmoke } from './scrapers/marketSmoke';
 import { scrapeRakuten } from './scrapers/rakuten';
 import { scrapeAmazon } from './scrapers/amazon';
 import { scrapeWD } from './scrapers/wd';
 import { sendErrorEmail } from './utils/mailer';
 import { DEFAULT_ARK_USER_AGENT, parseUrlList } from './utils/arkHelpers';
+import {
+  buildDefaultChromiumLaunchOptions,
+  buildMarketContextOptions,
+} from './utils/bicBrowser';
+import { DEFAULT_RETENTION_KEEP_COUNT, pruneTimestampedChildDirectories } from './utils/retention';
 import { isSharePointUploadConfigured, uploadFilesToSharePointIfConfigured } from './utils/sharepoint';
 import { uploadFilesToR2IfConfigured, R2UploadFile } from './utils/storageUpload';
 import {
@@ -41,7 +53,7 @@ import fs from 'fs';
 import path from 'path';
 
 type ExistingScrapeTarget = 'tek' | 'pside' | 'amazon' | 'wd' | 'ark-memory' | 'ark-ssd';
-type MarketScrapeTarget = 'market-smoke';
+type MarketScrapeTarget = 'market-smoke' | 'market-official-site' | 'market-amazon-search' | 'market-bic-search-browsermcp';
 type ScrapeTarget = ExistingScrapeTarget | MarketScrapeTarget;
 
 interface CliOptions {
@@ -168,6 +180,56 @@ async function main(): Promise<void> {
         continue;
       }
 
+      if (target === 'market-official-site') {
+        if (!marketConfigBundle) {
+          throw new Error('market-official-site 実行には market config が必要です');
+        }
+
+        const marketHeadless = resolveMarketHeadless(marketConfigBundle.config, headless);
+        console.log(`[Market] config 読み込み: ${marketConfigBundle.configPath}`);
+        await runTargetOnce(
+          target,
+          marketHeadless,
+          async (context) => {
+            await scrapeMarketOfficialSite(context, marketConfigBundle.config, {
+              headless: marketHeadless,
+            });
+          },
+          { marketConfig: marketConfigBundle.config },
+        );
+        continue;
+      }
+
+      if (target === 'market-amazon-search') {
+        if (!marketConfigBundle) {
+          throw new Error('market-amazon-search 実行には market config が必要です');
+        }
+
+        const marketHeadless = resolveMarketHeadless(marketConfigBundle.config, headless);
+        console.log(`[Market] config 読み込み: ${marketConfigBundle.configPath}`);
+        await runTargetOnce(
+          target,
+          marketHeadless,
+          async (context) => {
+            await scrapeMarketAmazonSearch(context, marketConfigBundle.config, {
+              headless: marketHeadless,
+            });
+          },
+          { marketConfig: marketConfigBundle.config },
+        );
+        continue;
+      }
+
+      if (target === 'market-bic-search-browsermcp') {
+        if (!marketConfigBundle) {
+          throw new Error('market-bic-search-browsermcp 実行には market config が必要です');
+        }
+
+        console.log(`[Market] config 読み込み: ${marketConfigBundle.configPath}`);
+        await scrapeMarketBicSearchBrowserMcp(marketConfigBundle.config);
+        continue;
+      }
+
       if (target === 'ark-memory') {
         const config = createArkMemoryConfig(headless);
         await runTargetOnce(target, headless, async (context) => {
@@ -263,13 +325,11 @@ async function runTargetOnce<T>(
   options: TargetRunOptions = {},
 ): Promise<T> {
   let browser: Browser | null = null;
+  const launchOptions = resolveLaunchOptionsForTarget(target, headless);
 
   const getBrowser = async (): Promise<Browser> => {
     if (!browser) {
-      browser = await chromium.launch({
-        headless,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
+      browser = await chromium.launch(launchOptions);
     }
 
     return browser;
@@ -337,6 +397,7 @@ async function stageSharePointFile(
 ): Promise<SharePointStagedFile> {
   const stagedPath = path.join(SHAREPOINT_STAGING_DIR, path.basename(sourcePath));
   await fs.promises.mkdir(SHAREPOINT_STAGING_DIR, { recursive: true });
+  await pruneTimestampedChildDirectories(path.dirname(SHAREPOINT_STAGING_DIR), DEFAULT_RETENTION_KEEP_COUNT);
   await fs.promises.copyFile(sourcePath, stagedPath);
 
   console.log(`[Output] SharePointステージング完了 (${target}): ${stagedPath}`);
@@ -398,16 +459,18 @@ async function createContextForTarget(
   getBrowser: () => Promise<Browser>,
   options: TargetRunOptions = {},
 ): Promise<BrowserContext> {
-  if (target === 'amazon') {
+  if (usesAmazonPersistentProfile(target)) {
     const userDataDir = process.env.AMAZON_PERSISTENT_USER_DATA_DIR;
     if (userDataDir) {
       console.log(`[Amazon] 永続プロファイルを使用: ${userDataDir}`);
+      const locale = options.marketConfig?.locale ?? 'ja-JP';
+      const timezoneId = options.marketConfig?.timezone ?? 'Asia/Tokyo';
+      const viewport = options.marketConfig?.viewport ?? { width: 1920, height: 1080 };
       return chromium.launchPersistentContext(userDataDir, {
-        headless,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        locale: 'ja-JP',
-        timezoneId: 'Asia/Tokyo',
-        viewport: { width: 1920, height: 1080 },
+        ...buildDefaultChromiumLaunchOptions(headless),
+        locale,
+        timezoneId,
+        viewport,
         colorScheme: 'light',
       });
     }
@@ -420,12 +483,7 @@ async function createContextForTarget(
     }
 
     const browser = await getBrowser();
-    return browser.newContext({
-      locale: marketConfig.locale,
-      timezoneId: marketConfig.timezone,
-      viewport: marketConfig.viewport,
-      colorScheme: 'light',
-    });
+    return browser.newContext(buildMarketContextOptions(marketConfig));
   }
 
   if (isArkTarget(target)) {
@@ -462,7 +520,7 @@ async function createContextForTarget(
 function getCliOptions(): CliOptions {
   const args = process.argv.slice(2);
   const targets: ScrapeTarget[] = [];
-  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke'];
+  const valid: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd', 'ark-memory', 'ark-ssd', 'market-smoke', 'market-official-site', 'market-amazon-search', 'market-bic-search-browsermcp'];
   const defaultTargets: ScrapeTarget[] = ['tek', 'pside', 'amazon', 'wd'];
   let marketConfigPath: string | undefined;
 
@@ -631,7 +689,18 @@ function isArkTarget(target: ScrapeTarget): boolean {
 }
 
 function isMarketTarget(target: ScrapeTarget): target is MarketScrapeTarget {
-  return target === 'market-smoke';
+  return target === 'market-smoke'
+    || target === 'market-official-site'
+    || target === 'market-amazon-search'
+    || target === 'market-bic-search-browsermcp';
+}
+
+function usesAmazonPersistentProfile(target: ScrapeTarget): boolean {
+  return target === 'amazon' || target === 'market-amazon-search';
+}
+
+function resolveLaunchOptionsForTarget(target: ScrapeTarget, headless: boolean) {
+  return buildDefaultChromiumLaunchOptions(headless);
 }
 
 main();

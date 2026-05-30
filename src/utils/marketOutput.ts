@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { MarketOutputFormat, MarketResearchTarget } from '../types';
 import { CsvManager } from './csv';
+import { DEFAULT_RETENTION_KEEP_COUNT, pruneTimestampedFilesBySegment } from './retention';
 
 export interface MarketOutputPaths {
   outputDir: string;
@@ -101,6 +102,7 @@ async function writeMarketJsonl(filePath: string, records: MarketOutputRecord[])
 
   await fs.promises.writeFile(filePath, `${payload}${records.length > 0 ? '\n' : ''}`, 'utf8');
   console.log(`[JSONL] 保存完了: ${filePath}`);
+  await pruneTimestampedFilesBySegment(path.dirname(filePath), DEFAULT_RETENTION_KEEP_COUNT);
 }
 
 function collectHeaders(records: MarketOutputRecord[]): string[] {

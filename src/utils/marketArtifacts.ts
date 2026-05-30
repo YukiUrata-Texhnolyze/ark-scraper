@@ -3,6 +3,11 @@ import path from 'path';
 import { Page } from 'playwright';
 import { MarketArtifactErrorInfo, MarketArtifactMetadata, MarketResearchTarget } from '../types';
 import { formatMarketTimestamp } from './marketOutput';
+import {
+  DEFAULT_RETENTION_KEEP_COUNT,
+  isTimestampedRunName,
+  pruneTimestampedChildDirectories,
+} from './retention';
 
 export interface MarketArtifactPaths {
   artifactDir: string;
@@ -19,9 +24,11 @@ export function createMarketArtifactPaths(
   target: MarketResearchTarget,
   runAt: Date,
   artifactRootDir?: string,
+  artifactLabel?: string,
 ): MarketArtifactPaths {
   const resolvedRootDir = path.resolve(process.env.MARKET_ARTIFACT_DIR ?? artifactRootDir ?? './playwright-artifacts/market-research');
-  const artifactDir = path.join(resolvedRootDir, sanitizePathSegment(project), target, formatMarketTimestamp(runAt));
+  const runDir = path.join(resolvedRootDir, sanitizePathSegment(project), target, formatMarketTimestamp(runAt));
+  const artifactDir = artifactLabel ? path.join(runDir, sanitizePathSegment(artifactLabel)) : runDir;
 
   return {
     artifactDir,
@@ -43,6 +50,7 @@ export async function saveMarketSuccessArtifacts(
   await writeJsonFile(artifactPaths.metadataPath, metadata);
   await capturePageHtml(page, artifactPaths.htmlPath);
   await captureScreenshot(page, artifactPaths.screenshotPath);
+  await pruneArtifactRuns(artifactPaths.artifactDir);
 }
 
 export async function saveMarketErrorArtifacts(
@@ -54,6 +62,7 @@ export async function saveMarketErrorArtifacts(
   await writeJsonFile(artifactPaths.errorMetadataPath, metadata);
   await capturePageHtml(page, artifactPaths.errorHtmlPath);
   await captureScreenshot(page, artifactPaths.errorScreenshotPath);
+  await pruneArtifactRuns(artifactPaths.artifactDir);
 }
 
 export function toMarketArtifactErrorInfo(error: unknown): MarketArtifactErrorInfo {
@@ -98,4 +107,15 @@ async function ensureDirectory(dirPath: string): Promise<void> {
 
 function sanitizePathSegment(value: string): string {
   return value.replace(/[\\/]/g, '-').trim() || 'unknown-project';
+}
+
+async function pruneArtifactRuns(artifactDir: string): Promise<void> {
+  const runDirectory = resolveArtifactRunDirectory(artifactDir);
+  await pruneTimestampedChildDirectories(path.dirname(runDirectory), DEFAULT_RETENTION_KEEP_COUNT);
+}
+
+function resolveArtifactRunDirectory(artifactDir: string): string {
+  return isTimestampedRunName(path.basename(artifactDir))
+    ? artifactDir
+    : path.dirname(artifactDir);
 }

@@ -1,6 +1,7 @@
 import path from 'path';
 import { BrowserContext } from 'playwright';
 import { ArkSsdConfig, ArkSsdItem } from '../types';
+import { DEFAULT_RETENTION_KEEP_COUNT, pruneTimestampedChildDirectories } from '../utils/retention';
 import {
   buildArkRunLabel,
   capturePageArtifacts,
@@ -50,6 +51,7 @@ export async function scrapeArkSsd(
   const payloadPath = path.join(artifactDir, 'result.json');
 
   await ensureDirectory(artifactDir);
+  await pruneTimestampedChildDirectories(config.artifactRootDir, DEFAULT_RETENTION_KEEP_COUNT);
   await ensureDirForFile(csvFilePath);
   if (config.storageStatePath) {
     await ensureDirForFile(config.storageStatePath);

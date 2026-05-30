@@ -1,20 +1,25 @@
 {
-  "project": "sample-market-research",
+  "project": "nicoh-coffee",
   "locale": "ja-JP",
   "timezone": "Asia/Tokyo",
   "viewport": {
-    "width": 1920,
-    "height": 1080
+    "width": 1440,
+    "height": 1400
   },
-  "headless": true,
   "officialUrls": [
-    "https://example.com/",
-    "https://example.com/nonexistent-market-product"
+    "https://nicohcoffee.com/",
+    "https://nicohcoffee.com/collections/all",
+    "https://nicohcoffee.com/products/nk-h01",
+    "https://nicohcoffee.com/products/nk-h01a",
+    "https://nicohcoffee.com/products/nk-h02"
   ],
   "queries": {
     "official": [
-      "example domain overview",
-      "missing example product page"
+      "brand top page",
+      "all products collection",
+      "NK-H01 product page",
+      "NK-H01A product page",
+      "NK-H02 product page"
     ],
     "amazon": [
       "Nicoh Coffee",
@@ -33,9 +38,6 @@
       "NK-H01A",
       "ポータブル エスプレッソマシン",
       "ポータブル コーヒーメーカー"
-    ],
-    "youtube": [
-      "sample query"
     ]
   },
   "loginStateLabel": "anonymous",
